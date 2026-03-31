@@ -1,11 +1,9 @@
 import { useState, useRef, useCallback } from 'react'
-import type { Preset, LoadedFont, Zone, MelodicTrack } from '../types'
+import type { Preset, LoadedFont, Zone } from '../types'
 
 type InitStatus = 'idle' | 'loading' | 'ready' | 'error'
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type AnySynth = any
-
-const DRUM_CHANNEL = 9
 
 function parsePresets(list: AnySynth[]): Preset[] {
   return list
@@ -169,21 +167,6 @@ export function useSynth() {
     })
   }, [])
 
-  // ── Drum operations ─────────────────────────────────────────────────────────
-  const applyDrums = useCallback((fontId: string, volume: number) => {
-    const synth = synthMapRef.current.get(fontId)
-    if (!synth) return
-    synth.controllerChange(DRUM_CHANNEL, 7, volume)
-  }, [])
-
-  const drumNoteOn = useCallback((fontId: string, note: number, velocity: number) => {
-    synthMapRef.current.get(fontId)?.noteOn(DRUM_CHANNEL, note, velocity)
-  }, [])
-
-  const drumNoteOff = useCallback((fontId: string, note: number) => {
-    synthMapRef.current.get(fontId)?.noteOff(DRUM_CHANNEL, note)
-  }, [])
-
   // ── Global ──────────────────────────────────────────────────────────────────
   const allNotesOff = useCallback(() => {
     synthMapRef.current.forEach((synth) => {
@@ -191,37 +174,10 @@ export function useSynth() {
     })
   }, [])
 
-  // ── Melodic track operations ────────────────────────────────────────────────
-  const applyMelodicTrack = useCallback((track: MelodicTrack) => {
-    const synth = synthMapRef.current.get(track.fontId)
-    if (!synth) return
-    synth.controllerChange(track.channel, 0, track.bank)
-    synth.controllerChange(track.channel, 32, 0)
-    synth.programChange(track.channel, track.program)
-    synth.controllerChange(track.channel, 7, track.volume)
-  }, [])
-
-  const melodicNoteOn = useCallback((track: MelodicTrack, note: number, velocity: number) => {
-    const synth = synthMapRef.current.get(track.fontId)
-    if (!synth) return
-    const ctx = audioCtxRef.current
-    if (ctx?.state !== 'running') {
-      ctx?.resume().then(() => synth.noteOn(track.channel, note, velocity))
-    } else {
-      synth.noteOn(track.channel, note, velocity)
-    }
-  }, [])
-
-  const melodicNoteOff = useCallback((track: MelodicTrack, note: number) => {
-    synthMapRef.current.get(track.fontId)?.noteOff(track.channel, note)
-  }, [])
-
   return {
     status, loadProgress, errorMsg, fonts,
     init, loadFont, removeFont,
     applyZone, noteOn, noteOff, sendCC, sendPitchBend,
-    applyDrums, drumNoteOn, drumNoteOff,
-    applyMelodicTrack, melodicNoteOn, melodicNoteOff,
     allNotesOff,
     firstMelodicPreset,
   }

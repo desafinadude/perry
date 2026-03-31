@@ -256,6 +256,14 @@ export function PianoRoll({ tracks, bars, fonts, presetsByFont, onTracksChange, 
                       const hasNote = selectedTrack.notes.some((n) => n.note === midiNote && n.start === step)
                       const isCurrent = step === currentStep && playing
                       
+                      // Determine border: bar lines on left of bar starts (except first), beat lines otherwise
+                      let borderStyle = '1px solid #eee' // default thin border
+                      if (isBarStart && step > 0) {
+                        borderStyle = '2px solid var(--ink)' // thick bar line on left
+                      } else if (isBeatStart && step > 0) {
+                        borderStyle = '1px solid #ccc' // beat line on left
+                      }
+                      
                       return (
                         <button
                           key={step}
@@ -264,7 +272,7 @@ export function PianoRoll({ tracks, bars, fonts, presetsByFont, onTracksChange, 
                             width: 24,
                             height: '100%',
                             border: 'none',
-                            borderRight: isBarStart ? '2px solid var(--ink)' : isBeatStart ? '1px solid #ccc' : '1px solid #eee',
+                            borderLeft: borderStyle,
                             background: isCurrent 
                               ? 'var(--accent-2)'
                               : hasNote

@@ -33,105 +33,11 @@ export interface EffectSettings {
   pan: number         // 0-127 (64 = center)
 }
 
-export interface DrumTrack {
-  id: string
-  name: string
-  note: number      // GM drum MIDI note
-  steps: number[]   // variable length based on bars: 0=off, 1=light, 2=medium, 3=heavy
-  velocity: number  // base velocity
-  muted: boolean
-}
-
-export interface MelodicNote {
-  note: number        // MIDI note number
-  start: number       // step position (0-based)
-  length: number      // duration in steps
-  velocity: number    // 0-127
-}
-
-export interface MelodicTrack {
-  id: string
-  name: string
-  notes: MelodicNote[]
-  muted: boolean
-  fontId: string
-  channel: number
-  program: number
-  bank: number
-  volume: number
-  effects?: EffectSettings
-}
-
-export interface SequencerState {
-  drums: DrumTrack[]
-  melodic: MelodicTrack[]
-  bars: number
-  bpm: number
-  swing: number
-}
-
 export interface SavedConfig {
   id: string
   name: string
   zones: Zone[]
   createdAt: number
-}
-
-export interface SavedProject {
-  id: string
-  name: string
-  sequencer: SequencerState
-  zones: Zone[]
-  createdAt: number
-}
-
-export interface SavedBeat {
-  id: string
-  name: string
-  tracks: DrumTrack[]
-  bars: number
-  createdAt: number
-}
-
-export const DEFAULT_DRUM_TRACKS: DrumTrack[] = [
-  { id: 'kick',   name: 'KICK',   note: 36, steps: Array(16).fill(0), velocity: 110, muted: false },
-  { id: 'snare',  name: 'SNARE',  note: 38, steps: Array(16).fill(0), velocity: 100, muted: false },
-  { id: 'rim',    name: 'RIM',    note: 37, steps: Array(16).fill(0), velocity: 80,  muted: false },
-  { id: 'chh',    name: 'C.HH',   note: 42, steps: Array(16).fill(0), velocity: 75,  muted: false },
-  { id: 'ohh',    name: 'O.HH',   note: 46, steps: Array(16).fill(0), velocity: 75,  muted: false },
-  { id: 'lotom',  name: 'LO TOM', note: 41, steps: Array(16).fill(0), velocity: 90,  muted: false },
-  { id: 'hitom',  name: 'HI TOM', note: 50, steps: Array(16).fill(0), velocity: 90,  muted: false },
-  { id: 'crash',  name: 'CRASH',  note: 49, steps: Array(16).fill(0), velocity: 100, muted: false },
-]
-
-// Drum machine preset patterns
-export const DRUM_PRESETS = {
-  lofi: {
-    name: 'LO-FI CHILL',
-    tracks: [
-      { id: 'kick',   name: 'KICK',   note: 36, steps: [3, 0, 0, 0, 0, 0, 2, 0, 0, 0, 3, 0, 0, 0, 0, 0], velocity: 100, muted: false },
-      { id: 'snare',  name: 'SNARE',  note: 38, steps: [0, 0, 0, 0, 3, 0, 0, 0, 0, 0, 0, 0, 3, 0, 0, 0], velocity: 90, muted: false },
-      { id: 'rim',    name: 'RIM',    note: 37, steps: [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0], velocity: 75, muted: false },
-      { id: 'chh',    name: 'C.HH',   note: 42, steps: [0, 0, 2, 0, 0, 0, 2, 0, 0, 0, 2, 0, 0, 0, 2, 0], velocity: 65, muted: false },
-      { id: 'ohh',    name: 'O.HH',   note: 46, steps: [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0], velocity: 70, muted: false },
-      { id: 'lotom',  name: 'LO TOM', note: 41, steps: [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0], velocity: 85, muted: false },
-      { id: 'hitom',  name: 'HI TOM', note: 50, steps: [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0], velocity: 85, muted: false },
-      { id: 'crash',  name: 'CRASH',  note: 49, steps: [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0], velocity: 95, muted: false },
-    ],
-  },
-  jazz: {
-    name: 'JAZZ SWING',
-    tracks: [
-      { id: 'kick',   name: 'KICK',   note: 36, steps: [3, 0, 0, 2, 0, 0, 3, 0, 0, 2, 0, 0, 3, 0, 0, 0], velocity: 95, muted: false },
-      { id: 'snare',  name: 'SNARE',  note: 38, steps: [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0], velocity: 85, muted: false },
-      { id: 'rim',    name: 'RIM',    note: 37, steps: [0, 0, 0, 0, 2, 0, 0, 2, 0, 0, 0, 0, 2, 0, 0, 2], velocity: 70, muted: false },
-      { id: 'chh',    name: 'C.HH',   note: 42, steps: [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0], velocity: 60, muted: false },
-      { id: 'ohh',    name: 'O.HH',   note: 46, steps: [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0], velocity: 65, muted: false },
-      { id: 'lotom',  name: 'LO TOM', note: 41, steps: [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0], velocity: 80, muted: false },
-      { id: 'hitom',  name: 'HI TOM', note: 50, steps: [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0], velocity: 80, muted: false },
-      { id: 'crash',  name: 'CRASH',  note: 51, steps: [2, 0, 0, 2, 0, 0, 2, 0, 0, 2, 0, 0, 2, 0, 0, 2], velocity: 75, muted: false },
-    ],
-  },
 }
 
 export const ZONE_COLORS = [
@@ -169,35 +75,5 @@ export const saveConfig = (name: string, zones: Zone[]): SavedConfig[] => {
 export const deleteConfig = (id: string): SavedConfig[] => {
   const updated = getSavedConfigs().filter((c) => c.id !== id)
   localStorage.setItem(STORAGE_KEY, JSON.stringify(updated))
-  return updated
-}
-
-const BEATS_STORAGE_KEY = 'perry_beats'
-export const getSavedBeats = (): SavedBeat[] => {
-  try { return JSON.parse(localStorage.getItem(BEATS_STORAGE_KEY) || '[]') } catch { return [] }
-}
-export const saveBeat = (name: string, tracks: DrumTrack[], bars: number): SavedBeat[] => {
-  const updated = [...getSavedBeats(), { id: Date.now().toString(), name, tracks, bars, createdAt: Date.now() }]
-  localStorage.setItem(BEATS_STORAGE_KEY, JSON.stringify(updated))
-  return updated
-}
-export const deleteBeat = (id: string): SavedBeat[] => {
-  const updated = getSavedBeats().filter((b) => b.id !== id)
-  localStorage.setItem(BEATS_STORAGE_KEY, JSON.stringify(updated))
-  return updated
-}
-
-const PROJECTS_STORAGE_KEY = 'perry_projects'
-export const getSavedProjects = (): SavedProject[] => {
-  try { return JSON.parse(localStorage.getItem(PROJECTS_STORAGE_KEY) || '[]') } catch { return [] }
-}
-export const saveProject = (name: string, sequencer: SequencerState, zones: Zone[]): SavedProject[] => {
-  const updated = [...getSavedProjects(), { id: Date.now().toString(), name, sequencer, zones, createdAt: Date.now() }]
-  localStorage.setItem(PROJECTS_STORAGE_KEY, JSON.stringify(updated))
-  return updated
-}
-export const deleteProject = (id: string): SavedProject[] => {
-  const updated = getSavedProjects().filter((p) => p.id !== id)
-  localStorage.setItem(PROJECTS_STORAGE_KEY, JSON.stringify(updated))
   return updated
 }
