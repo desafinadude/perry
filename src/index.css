@@ -1,0 +1,64 @@
+@import url('https://fonts.googleapis.com/css2?family=Bebas+Neue&family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans+Condensed:wght@300;400&display=swap');
+
+:root {
+  --bg:       #F5F2EC;
+  --surface:  #EDEBE3;
+  --ink:      #111111;
+  --accent-1: #1A6BB5;
+  --accent-2: #D93B2B;
+  --muted:    #888880;
+  --border:   #C8C5BB;
+
+  --font-display: 'Bebas Neue', 'Impact', sans-serif;
+  --font-mono:    'IBM Plex Mono', 'Courier New', monospace;
+  --font-body:    'IBM Plex Sans Condensed', sans-serif;
+}
+
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+html, body, #root {
+  height: 100%;
+  background: var(--bg);
+  color: var(--ink);
+  font-family: var(--font-mono);
+  font-size: 12px;
+  -webkit-font-smoothing: antialiased;
+}
+
+#root { display: flex; flex-direction: column; }
+
+::-webkit-scrollbar { width: 4px; height: 4px; }
+::-webkit-scrollbar-track { background: var(--surface); }
+::-webkit-scrollbar-thumb { background: var(--border); }
+
+select, input, button, textarea {
+  font-family: var(--font-mono);
+  font-size: 11px;
+}
+
+select option { background: var(--bg); color: var(--ink); }
+
+input[type="range"] {
+  -webkit-appearance: none;
+  appearance: none;
+  height: 2px;
+  background: var(--border);
+  outline: none;
+  cursor: pointer;
+}
+input[type="range"]::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  width: 10px;
+  height: 10px;
+  background: var(--ink);
+  border-radius: 0;
+  cursor: pointer;
+}
+input[type="range"]::-moz-range-thumb {
+  width: 10px;
+  height: 10px;
+  background: var(--ink);
+  border-radius: 0;
+  border: none;
+  cursor: pointer;
+}

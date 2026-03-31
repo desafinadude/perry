@@ -1,0 +1,40 @@
+{
+  "hash": "c2a32a44",
+  "configHash": "18ba632d",
+  "lockfileHash": "a3ed65fd",
+  "browserHash": "eea420dc",
+  "optimized": {
+    "react/jsx-dev-runtime": {
+      "src": "../../node_modules/react/jsx-dev-runtime.js",
+      "file": "react_jsx-dev-runtime.js",
+      "fileHash": "ff83db48",
+      "needsInterop": true
+    },
+    "react": {
+      "src": "../../node_modules/react/index.js",
+      "file": "react.js",
+      "fileHash": "a6a00b04",
+      "needsInterop": true
+    },
+    "react-dom/client": {
+      "src": "../../node_modules/react-dom/client.js",
+      "file": "react-dom_client.js",
+      "fileHash": "c94d0cfc",
+      "needsInterop": true
+    },
+    "spessasynth_lib": {
+      "src": "../../node_modules/spessasynth_lib/dist/index.js",
+      "file": "spessasynth_lib.js",
+      "fileHash": "3e836c7a",
+      "needsInterop": false
+    }
+  },
+  "chunks": {
+    "chunk-4WPONVGN": {
+      "file": "chunk-4WPONVGN.js"
+    },
+    "chunk-KVCYZR2Q": {
+      "file": "chunk-KVCYZR2Q.js"
+    }
+  }
+}
