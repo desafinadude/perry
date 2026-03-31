@@ -37,9 +37,13 @@ function zoneColor(midi: number, zones: Zone[]): string | null {
   return null
 }
 
-interface Props { zones: Zone[]; activeNotes: Set<number> }
+interface Props { 
+  zones: Zone[]
+  activeNotes: Set<number>
+  height?: number // height in pixels, defaults to auto-calculated
+}
 
-export function Piano({ zones, activeNotes }: Props) {
+export function Piano({ zones, activeNotes, height }: Props) {
   const containerRef = useRef<HTMLDivElement>(null)
   const [width, setWidth] = useState(0)
 
@@ -52,7 +56,7 @@ export function Piano({ zones, activeNotes }: Props) {
   }, [])
 
   const keys = useMemo(() => (width > 0 ? buildLayout(width) : []), [width])
-  const wh = Math.max(90, Math.min(130, width / 9))       // white key height, responsive
+  const wh = height ?? Math.max(90, Math.min(130, width / 9))       // white key height, responsive or fixed
   const bh = wh * BLACK_H_RATIO
 
   return (

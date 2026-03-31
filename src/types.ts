@@ -22,20 +22,65 @@ export interface Zone {
   volume: number
   color: string
   fontId: string
+  effects?: EffectSettings
+}
+
+export interface EffectSettings {
+  reverb: number      // 0-127
+  chorus: number      // 0-127
+  delay: number       // 0-127
+  filter: number      // 0-127 (cutoff)
+  pan: number         // 0-127 (64 = center)
 }
 
 export interface DrumTrack {
   id: string
   name: string
   note: number      // GM drum MIDI note
-  steps: number[]   // 16 steps: 0=off, 1=light, 2=medium, 3=heavy
+  steps: number[]   // variable length based on bars: 0=off, 1=light, 2=medium, 3=heavy
   velocity: number  // base velocity
   muted: boolean
+}
+
+export interface MelodicNote {
+  note: number        // MIDI note number
+  start: number       // step position (0-based)
+  length: number      // duration in steps
+  velocity: number    // 0-127
+}
+
+export interface MelodicTrack {
+  id: string
+  name: string
+  notes: MelodicNote[]
+  muted: boolean
+  fontId: string
+  channel: number
+  program: number
+  bank: number
+  volume: number
+  effects?: EffectSettings
+}
+
+export interface SequencerState {
+  drums: DrumTrack[]
+  melodic: MelodicTrack[]
+  bars: number
+  bpm: number
+  swing: number
 }
 
 export interface SavedConfig {
   id: string
   name: string
+  zones: Zone[]
+  createdAt: number
+}
+
+export interface SavedProject {
+  id: string
+  name: string
+  sequencer: SequencerState
   zones: Zone[]
   createdAt: number
 }
@@ -139,5 +184,20 @@ export const saveBeat = (name: string, tracks: DrumTrack[], bars: number): Saved
 export const deleteBeat = (id: string): SavedBeat[] => {
   const updated = getSavedBeats().filter((b) => b.id !== id)
   localStorage.setItem(BEATS_STORAGE_KEY, JSON.stringify(updated))
+  return updated
+}
+
+const PROJECTS_STORAGE_KEY = 'perry_projects'
+export const getSavedProjects = (): SavedProject[] => {
+  try { return JSON.parse(localStorage.getItem(PROJECTS_STORAGE_KEY) || '[]') } catch { return [] }
+}
+export const saveProject = (name: string, sequencer: SequencerState, zones: Zone[]): SavedProject[] => {
+  const updated = [...getSavedProjects(), { id: Date.now().toString(), name, sequencer, zones, createdAt: Date.now() }]
+  localStorage.setItem(PROJECTS_STORAGE_KEY, JSON.stringify(updated))
+  return updated
+}
+export const deleteProject = (id: string): SavedProject[] => {
+  const updated = getSavedProjects().filter((p) => p.id !== id)
+  localStorage.setItem(PROJECTS_STORAGE_KEY, JSON.stringify(updated))
   return updated
 }

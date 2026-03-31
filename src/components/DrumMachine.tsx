@@ -7,21 +7,23 @@ interface Props {
   onNoteOn:  (fontId: string, note: number, velocity: number) => void
   onNoteOff: (fontId: string, note: number) => void
   onApply:   (fontId: string, volume: number) => void
+  // Global playback props
+  playing: boolean
+  onPlayingChange: (playing: boolean) => void
+  bpm: number
+  swing: number
+  bars: number
 }
 
 const STEPS_PER_BAR = 16
 const GROUP = 4  // visual grouping
 
-export function DrumMachine({ fonts, onNoteOn, onNoteOff, onApply }: Props) {
+export function DrumMachine({ fonts, onNoteOn, onNoteOff, onApply, playing, onPlayingChange, bpm, swing, bars }: Props) {
   const [tracks, setTracks]       = useState<DrumTrack[]>(DEFAULT_DRUM_TRACKS)
-  const [playing, setPlaying]     = useState(false)
-  const [bpm, setBpm]             = useState(100)
   const [currentStep, setStep]    = useState(-1)
   const [volume, setVolume]       = useState(100)
   const [fontId, setFontId]       = useState<string>(fonts[0]?.id ?? '')
   const [collapsed, setCollapsed] = useState(false)
-  const [swing, setSwing]         = useState(0) // 0-100: swing amount
-  const [bars, setBars]           = useState(4) // number of bars
   const [savedBeats, setSavedBeats] = useState<SavedBeat[]>(getSavedBeats())
   const [beatName, setBeatName]   = useState('')
   const [showSaved, setShowSaved] = useState(false)
@@ -38,6 +40,26 @@ export function DrumMachine({ fonts, onNoteOn, onNoteOff, onApply }: Props) {
     if (fontId) onApply(fontId, volume)
   }, [fontId, volume, onApply])
 
+  // Adapt tracks when bars change
+  useEffect(() => {
+    setTracks((prev) => prev.map((t) => {
+      if (t.steps.length === totalSteps) return t
+      if (t.steps.length > totalSteps) {
+        // Shrink: truncate
+        return { ...t, steps: t.steps.slice(0, totalSteps) }
+      } else {
+        // Grow: repeat pattern
+        const extended = [...t.steps]
+        while (extended.length < totalSteps) {
+          const remaining = totalSteps - extended.length
+          const toCopy = Math.min(STEPS_PER_BAR, remaining)
+          extended.push(...t.steps.slice(0, toCopy))
+        }
+        return { ...t, steps: extended }
+      }
+    }))
+  }, [bars, totalSteps])
+
   // Refs so the scheduler always reads the latest state without restarting
   const tracksRef  = useRef(tracks);  tracksRef.current  = tracks
   const fontIdRef  = useRef(fontId);  fontIdRef.current  = fontId
@@ -48,7 +70,7 @@ export function DrumMachine({ fonts, onNoteOn, onNoteOff, onApply }: Props) {
   const timeoutRef = useRef<number | null>(null)  // Track the timeout ID
 
   const stop = useCallback(() => {
-    setPlaying(false)
+    onPlayingChange(false)
     setStep(-1)
     stepRef.current = 0
     // Cancel any pending timeout
@@ -56,7 +78,7 @@ export function DrumMachine({ fonts, onNoteOn, onNoteOff, onApply }: Props) {
       clearTimeout(timeoutRef.current)
       timeoutRef.current = null
     }
-  }, [])
+  }, [onPlayingChange])
 
   // Scheduling with swing support
   useEffect(() => {
@@ -142,27 +164,6 @@ export function DrumMachine({ fonts, onNoteOn, onNoteOff, onApply }: Props) {
     setTracks(extendedTracks)
   }
 
-  const handleBarsChange = (newBars: number) => {
-    setBars(newBars)
-    const newTotalSteps = newBars * STEPS_PER_BAR
-    setTracks((prev) => prev.map((t) => {
-      if (t.steps.length === newTotalSteps) return t
-      if (t.steps.length > newTotalSteps) {
-        // Shrink: truncate
-        return { ...t, steps: t.steps.slice(0, newTotalSteps) }
-      } else {
-        // Grow: repeat pattern
-        const extended = [...t.steps]
-        while (extended.length < newTotalSteps) {
-          const remaining = newTotalSteps - extended.length
-          const toCopy = Math.min(STEPS_PER_BAR, remaining)
-          extended.push(...t.steps.slice(0, toCopy))
-        }
-        return { ...t, steps: extended }
-      }
-    }))
-  }
-
   const handleSaveBeat = useCallback(() => {
     const name = beatName.trim() || `Beat ${savedBeats.length + 1}`
     setSavedBeats(saveBeat(name, tracks, bars))
@@ -170,7 +171,8 @@ export function DrumMachine({ fonts, onNoteOn, onNoteOff, onApply }: Props) {
   }, [beatName, savedBeats.length, tracks, bars])
 
   const handleLoadBeat = useCallback((beat: SavedBeat) => {
-    setBars(beat.bars)
+    // Note: bars is now controlled by parent, so we can't change it here
+    // Just load the tracks and let them adapt to current bar count
     setTracks(beat.tracks)
     setShowSaved(false)
   }, [])
@@ -197,46 +199,6 @@ export function DrumMachine({ fonts, onNoteOn, onNoteOff, onApply }: Props) {
         </div>
 
         {!collapsed && <>
-          {/* Play / Stop */}
-          <div style={{ display: 'flex', gap: 0, borderRight: '1px solid var(--border)', alignSelf: 'stretch', alignItems: 'center', padding: '0 16px' }}>
-            <button
-              onClick={() => playing ? stop() : setPlaying(true)}
-              style={{
-                ...btn,
-                background: playing ? 'var(--accent-2)' : 'var(--accent-1)',
-                border: `1.5px solid ${playing ? 'var(--accent-2)' : 'var(--accent-1)'}`,
-                color: '#fff',
-                minWidth: 64,
-              }}
-            >
-              {playing ? '■ STOP' : '▶ PLAY'}
-            </button>
-          </div>
-
-          {/* BPM */}
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8, borderRight: '1px solid var(--border)', padding: '0 16px', alignSelf: 'stretch' }}>
-            <span style={lbl}>BPM</span>
-            <input
-              type="number" min={40} max={300} value={bpm}
-              onChange={(e) => setBpm(Math.max(40, Math.min(300, Number(e.target.value))))}
-              style={{ ...numInput, width: 52 }}
-            />
-            <input type="range" min={40} max={240} value={bpm}
-              onChange={(e) => setBpm(Number(e.target.value))}
-              style={{ width: 80 }}
-            />
-          </div>
-
-          {/* Bars */}
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8, borderRight: '1px solid var(--border)', padding: '0 16px', alignSelf: 'stretch' }}>
-            <span style={lbl}>BARS</span>
-            <input
-              type="number" min={1} max={8} value={bars}
-              onChange={(e) => handleBarsChange(Math.max(1, Math.min(8, Number(e.target.value))))}
-              style={{ ...numInput, width: 42 }}
-            />
-          </div>
-
           {/* Volume */}
           <div style={{ display: 'flex', alignItems: 'center', gap: 8, borderRight: '1px solid var(--border)', padding: '0 16px', alignSelf: 'stretch' }}>
             <span style={lbl}>VOL</span>
@@ -245,16 +207,6 @@ export function DrumMachine({ fonts, onNoteOn, onNoteOff, onApply }: Props) {
               style={{ width: 72 }}
             />
             <span style={{ fontSize: 10, color: 'var(--muted)', minWidth: 22 }}>{volume}</span>
-          </div>
-
-          {/* Swing */}
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8, borderRight: '1px solid var(--border)', padding: '0 16px', alignSelf: 'stretch' }}>
-            <span style={lbl}>SWING</span>
-            <input type="range" min={0} max={100} value={swing}
-              onChange={(e) => setSwing(Number(e.target.value))}
-              style={{ width: 72 }}
-            />
-            <span style={{ fontSize: 10, color: 'var(--muted)', minWidth: 22 }}>{swing}%</span>
           </div>
 
           {/* Font selector */}

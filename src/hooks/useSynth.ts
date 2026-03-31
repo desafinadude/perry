@@ -1,5 +1,5 @@
 import { useState, useRef, useCallback } from 'react'
-import type { Preset, LoadedFont, Zone } from '../types'
+import type { Preset, LoadedFont, Zone, MelodicTrack } from '../types'
 
 type InitStatus = 'idle' | 'loading' | 'ready' | 'error'
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -191,11 +191,37 @@ export function useSynth() {
     })
   }, [])
 
+  // ── Melodic track operations ────────────────────────────────────────────────
+  const applyMelodicTrack = useCallback((track: MelodicTrack) => {
+    const synth = synthMapRef.current.get(track.fontId)
+    if (!synth) return
+    synth.controllerChange(track.channel, 0, track.bank)
+    synth.controllerChange(track.channel, 32, 0)
+    synth.programChange(track.channel, track.program)
+    synth.controllerChange(track.channel, 7, track.volume)
+  }, [])
+
+  const melodicNoteOn = useCallback((track: MelodicTrack, note: number, velocity: number) => {
+    const synth = synthMapRef.current.get(track.fontId)
+    if (!synth) return
+    const ctx = audioCtxRef.current
+    if (ctx?.state !== 'running') {
+      ctx?.resume().then(() => synth.noteOn(track.channel, note, velocity))
+    } else {
+      synth.noteOn(track.channel, note, velocity)
+    }
+  }, [])
+
+  const melodicNoteOff = useCallback((track: MelodicTrack, note: number) => {
+    synthMapRef.current.get(track.fontId)?.noteOff(track.channel, note)
+  }, [])
+
   return {
     status, loadProgress, errorMsg, fonts,
     init, loadFont, removeFont,
     applyZone, noteOn, noteOff, sendCC, sendPitchBend,
     applyDrums, drumNoteOn, drumNoteOff,
+    applyMelodicTrack, melodicNoteOn, melodicNoteOff,
     allNotesOff,
     firstMelodicPreset,
   }

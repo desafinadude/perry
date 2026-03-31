@@ -1,10 +1,10 @@
 import { useState, useCallback, useEffect, useRef, useMemo } from 'react'
 import { Piano } from './components/Piano'
 import { ZoneEditor } from './components/ZoneEditor'
-import { DrumMachine } from './components/DrumMachine'
+import { Sequencer } from './components/Sequencer'
 import { useSynth } from './hooks/useSynth'
 import { useMidi } from './hooks/useMidi'
-import type { Zone, Preset, SavedConfig } from './types'
+import type { Zone, Preset, SavedConfig, MelodicTrack } from './types'
 import { ZONE_COLORS, PIANO_MIN, PIANO_MAX, getSavedConfigs, saveConfig, deleteConfig } from './types'
 
 let zoneIdCounter = 1
@@ -28,12 +28,22 @@ export default function App() {
   const [savedConfigs, setSavedConfigs] = useState<SavedConfig[]>(getSavedConfigs)
   const [saveInput, setSaveInput] = useState('')
   const [showSaved, setShowSaved] = useState(false)
+  
+  // Global playback state
+  const [playing, setPlaying] = useState(false)
+  const [bpm, setBpm] = useState(100)
+  const [swing, setSwing] = useState(0)
+  const [bars, setBars] = useState(4)
+  
+  // Resizable zones height
+  const [zonesHeight, setZonesHeight] = useState(30) // percentage
 
   const {
     status, loadProgress, errorMsg, fonts,
     init, loadFont, removeFont,
     applyZone, noteOn, noteOff, sendCC, sendPitchBend,
     applyDrums, drumNoteOn, drumNoteOff,
+    applyMelodicTrack,
     allNotesOff, firstMelodicPreset,
   } = useSynth()
 
@@ -268,6 +278,92 @@ export default function App() {
           </div>
         )}
 
+        {/* ━━━ PLAYBACK CONTROLS ━━━ */}
+        {status === 'ready' && fonts.length > 0 && (
+          <div style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '0 16px', borderRight: '1px solid #2a2a2a' }}>
+            <button
+              onClick={() => setPlaying(!playing)}
+              style={{
+                background: playing ? 'var(--accent-1)' : '#2a2a2a',
+                border: 'none',
+                color: 'var(--bg)',
+                cursor: 'pointer',
+                fontFamily: 'var(--font-mono)',
+                fontSize: 11,
+                fontWeight: 600,
+                letterSpacing: '0.08em',
+                padding: '8px 16px',
+                minWidth: 70,
+              }}
+            >
+              {playing ? 'STOP' : 'PLAY'}
+            </button>
+
+            <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+              <label style={{ fontFamily: 'var(--font-mono)', fontSize: 9, color: '#666', letterSpacing: '0.1em' }}>
+                BPM
+              </label>
+              <input
+                type="number"
+                min="40"
+                max="300"
+                value={bpm}
+                onChange={(e) => setBpm(Number(e.target.value))}
+                style={{
+                  background: '#1a1a1a',
+                  border: '1px solid #2a2a2a',
+                  color: 'var(--bg)',
+                  fontFamily: 'var(--font-mono)',
+                  fontSize: 11,
+                  padding: '4px 6px',
+                  width: 55,
+                  outline: 'none',
+                }}
+              />
+            </div>
+
+            <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+              <label style={{ fontFamily: 'var(--font-mono)', fontSize: 9, color: '#666', letterSpacing: '0.1em' }}>
+                SWING
+              </label>
+              <input
+                type="range"
+                min="0"
+                max="100"
+                value={swing}
+                onChange={(e) => setSwing(Number(e.target.value))}
+                style={{ width: 80 }}
+              />
+              <span style={{ fontFamily: 'var(--font-mono)', fontSize: 9, color: '#888', minWidth: 28 }}>
+                {swing}%
+              </span>
+            </div>
+
+            <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+              <label style={{ fontFamily: 'var(--font-mono)', fontSize: 9, color: '#666', letterSpacing: '0.1em' }}>
+                BARS
+              </label>
+              <input
+                type="number"
+                min="1"
+                max="8"
+                value={bars}
+                onChange={(e) => setBars(Number(e.target.value))}
+                style={{
+                  background: '#1a1a1a',
+                  border: '1px solid #2a2a2a',
+                  color: 'var(--bg)',
+                  fontFamily: 'var(--font-mono)',
+                  fontSize: 11,
+                  padding: '4px 6px',
+                  width: 45,
+                  outline: 'none',
+                }}
+              />
+            </div>
+          </div>
+        )}
+
         <div style={{ flex: 1 }} />
 
         {/* MIDI selector */}
@@ -292,10 +388,10 @@ export default function App() {
       </header>
 
       {/* ━━━ PIANO ━━━ */}
-      <Piano zones={zones} activeNotes={activeNotes} />
+      <Piano zones={zones} activeNotes={activeNotes} height={60} />
 
       {/* ━━━ ZONES ━━━ */}
-      <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+      <div style={{ display: 'flex', flexDirection: 'column', minHeight: 0, flex: `0 0 ${zonesHeight}%`, overflow: 'hidden' }}>
         <div style={{
           display: 'flex', alignItems: 'center', borderBottom: '2px solid var(--ink)',
           background: 'var(--surface)', minHeight: 42, padding: '0 0 0 11px',
@@ -355,7 +451,7 @@ export default function App() {
 
           {activeNotes.size > 0 && (
             <span style={{ marginLeft: 'auto', marginRight: 16, fontFamily: 'var(--font-mono)', fontSize: 9, color: 'var(--accent-1)', letterSpacing: '0.15em' }}>
-              ● {activeNotes.size} NOTE{activeNotes.size !== 1 ? 'S' : ''}
+              ● {activeNotes.size > 1 ? `${activeNotes.size} NOTES` : '1 NOTE'}
             </span>
           )}
         </div>
@@ -373,13 +469,60 @@ export default function App() {
         </div>
       </div>
 
-      {/* ━━━ DRUM MACHINE ━━━ */}
-      <DrumMachine
-        fonts={fonts}
-        onNoteOn={drumNoteOn}
-        onNoteOff={drumNoteOff}
-        onApply={applyDrums}
-      />
+      {/* ━━━ RESIZE HANDLE ━━━ */}
+      <div
+        onMouseDown={(e) => {
+          e.preventDefault()
+          const startY = e.clientY
+          const startHeight = zonesHeight
+          
+          const handleMouseMove = (moveEvent: MouseEvent) => {
+            const deltaY = moveEvent.clientY - startY
+            const viewportHeight = window.innerHeight
+            const deltaPercent = (deltaY / viewportHeight) * 100
+            const newHeight = Math.max(15, Math.min(70, startHeight + deltaPercent))
+            setZonesHeight(newHeight)
+          }
+          
+          const handleMouseUp = () => {
+            document.removeEventListener('mousemove', handleMouseMove)
+            document.removeEventListener('mouseup', handleMouseUp)
+          }
+          
+          document.addEventListener('mousemove', handleMouseMove)
+          document.addEventListener('mouseup', handleMouseUp)
+        }}
+        style={{
+          height: 8,
+          background: 'var(--surface)',
+          borderTop: '1px solid var(--border)',
+          borderBottom: '1px solid var(--border)',
+          cursor: 'ns-resize',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          flexShrink: 0,
+        }}
+      >
+        <div style={{ width: 40, height: 2, background: 'var(--border)', borderRadius: 1 }} />
+      </div>
+
+      {/* ━━━ SEQUENCER ━━━ */}
+      <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden', minHeight: 0 }}>
+        <Sequencer
+          fonts={fonts}
+          presetsByFont={presetsByFont}
+          onNoteOn={drumNoteOn}
+          onNoteOff={drumNoteOff}
+          onApplyDrums={applyDrums}
+          onApplyMelodic={applyMelodicTrack}
+          playing={playing}
+          onPlayingChange={setPlaying}
+          bpm={bpm}
+          swing={swing}
+          bars={bars}
+        />
+      </div>
     </div>
   )
 }
