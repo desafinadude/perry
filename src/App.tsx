@@ -37,9 +37,9 @@ export default function App() {
     allNotesOff, firstMelodicPreset,
   } = useSynth()
 
-  // Once main font loads, create default zone with correct preset
+  // Once a font loads, create default zone if none exist
   useEffect(() => {
-    if (fonts.length === 1 && zones.length === 0) {
+    if (fonts.length > 0 && zones.length === 0) {
       const first = firstMelodicPreset(fonts[0].presets)
       setZones([makeZone(fonts[0].id, 0, {
         bank: first?.bank ?? 0,
@@ -169,11 +169,9 @@ export default function App() {
     // If we replaced a font, keep zones pointing to it (same id); if new, do nothing
     if (!replaceId) {
       // New font loaded — don't auto-assign zones, let user pick
-      _ = newId
+      void newId
     }
   }, [allNotesOff, loadFont])
-  // suppress unused warning
-  function _(_x: unknown) {}
 
   // Save / load configs
   const handleSave = useCallback(() => {
@@ -216,7 +214,7 @@ export default function App() {
         {/* SF status */}
         <div style={{ display: 'flex', flexDirection: 'column', justifyContent: 'center', padding: '0 20px', borderRight: '1px solid #2a2a2a', minWidth: 200 }}>
           {status === 'idle' && (
-            <button onClick={init} style={primaryBtn}>LOAD SOUNDFONT</button>
+            <button onClick={init} style={primaryBtn}>INITIALIZE SYNTH</button>
           )}
           {status === 'loading' && (
             <div>
@@ -226,18 +224,23 @@ export default function App() {
               <span style={{ fontFamily: 'var(--font-mono)', fontSize: 10, color: '#888', letterSpacing: '0.1em' }}>{loadProgress}%</span>
             </div>
           )}
-          {status === 'ready' && (
+          {status === 'ready' && fonts.length === 0 && (
             <div>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 2 }}>
+              <span style={{ fontFamily: 'var(--font-mono)', fontSize: 10, color: '#888', letterSpacing: '0.1em' }}>
+                READY · NO FONTS LOADED
+              </span>
+            </div>
+          )}
+          {status === 'ready' && fonts.length > 0 && (
+            <div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 2 }}>
                 <div style={{ width: 6, height: 6, background: 'var(--accent-1)', flexShrink: 0 }} />
-                {fonts.map((f) => (
-                  <span key={f.id} style={{ fontFamily: 'var(--font-display)', fontSize: 13, letterSpacing: '0.1em', color: 'var(--bg)' }}>
-                    {f.name.replace(/\.[^.]+$/, '').toUpperCase()}
-                  </span>
-                ))}
+                <span style={{ fontFamily: 'var(--font-mono)', fontSize: 11, letterSpacing: '0.1em', color: 'var(--bg)' }}>
+                  {fonts.length} FONT{fonts.length !== 1 ? 'S' : ''}
+                </span>
               </div>
               <span style={{ fontFamily: 'var(--font-mono)', fontSize: 9, color: '#666', letterSpacing: '0.1em' }}>
-                {fonts.map((f) => f.presets.length).reduce((a, b) => a + b, 0)} PRESETS · {fonts.length} FONT{fonts.length !== 1 ? 'S' : ''}
+                {fonts.map((f) => f.presets.length).reduce((a, b) => a + b, 0)} PRESETS LOADED
               </span>
             </div>
           )}
@@ -249,13 +252,17 @@ export default function App() {
         {/* Add font / manage fonts */}
         {status === 'ready' && (
           <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '0 16px', borderRight: '1px solid #2a2a2a' }}>
-            <button onClick={handleAddFont} style={ghostBtnDark}>+ FONT</button>
-            {fonts.length > 1 && fonts.slice(1).map((f) => (
-              <div key={f.id} style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
-                <span style={{ fontFamily: 'var(--font-mono)', fontSize: 10, color: '#888' }}>
-                  {f.name.replace(/\.[^.]+$/, '').slice(0, 12).toUpperCase()}
+            <button onClick={handleAddFont} style={ghostBtnDark}>+ LOAD FONT</button>
+            {fonts.map((f) => (
+              <div key={f.id} style={{ display: 'flex', alignItems: 'center', gap: 4, background: '#1a1a1a', padding: '4px 8px', border: '1px solid #2a2a2a' }}>
+                <span style={{ fontFamily: 'var(--font-mono)', fontSize: 10, color: 'var(--bg)' }}>
+                  {f.name.replace(/\.[^.]+$/, '').slice(0, 14).toUpperCase()}
                 </span>
-                <button onClick={() => removeFont(f.id)} style={{ ...ghostBtnDark, padding: '3px 6px', fontSize: 12 }}>×</button>
+                <button onClick={() => removeFont(f.id)} style={{ 
+                  background: 'transparent', border: 'none', color: '#666', cursor: 'pointer', 
+                  padding: '0 2px', fontSize: 14, lineHeight: 1,
+                  transition: 'color 0.15s',
+                }}>×</button>
               </div>
             ))}
           </div>

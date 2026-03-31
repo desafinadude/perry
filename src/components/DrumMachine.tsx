@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
 import type { DrumTrack, LoadedFont } from '../types'
-import { DEFAULT_DRUM_TRACKS } from '../types'
+import { DEFAULT_DRUM_TRACKS, DRUM_PRESETS, noteName, noteNameToMidi } from '../types'
 
 interface Props {
   fonts: LoadedFont[]
@@ -20,6 +20,7 @@ export function DrumMachine({ fonts, onNoteOn, onNoteOff, onApply }: Props) {
   const [volume, setVolume]       = useState(100)
   const [fontId, setFontId]       = useState<string>(fonts[0]?.id ?? '')
   const [collapsed, setCollapsed] = useState(false)
+  const [swing, setSwing]         = useState(0) // 0-100: swing amount
 
   // Sync fontId when fonts list first arrives or changes
   useEffect(() => {
@@ -34,6 +35,7 @@ export function DrumMachine({ fonts, onNoteOn, onNoteOff, onApply }: Props) {
   // Refs so the scheduler always reads the latest state without restarting
   const tracksRef  = useRef(tracks);  tracksRef.current  = tracks
   const fontIdRef  = useRef(fontId);  fontIdRef.current  = fontId
+  const swingRef   = useRef(swing);   swingRef.current   = swing
   const stepRef    = useRef(0)
 
   const stop = useCallback(() => {
@@ -42,32 +44,44 @@ export function DrumMachine({ fonts, onNoteOn, onNoteOff, onApply }: Props) {
     stepRef.current = 0
   }, [])
 
-  // Scheduling
+  // Scheduling with swing support
   useEffect(() => {
     if (!playing) return
-    const ms = (60_000 / bpm) / 4   // 16th note duration
+    const baseMsPerStep = (60_000 / bpm) / 4   // 16th note duration
 
     const tick = () => {
       const s = stepRef.current
       tracksRef.current.forEach((t) => {
         if (!t.muted && t.steps[s]) {
-          onNoteOn(fontIdRef.current, t.note, t.velocity)
-          setTimeout(() => onNoteOff(fontIdRef.current, t.note), Math.min(ms * 0.8, 120))
+          // Calculate velocity based on step intensity (0=off, 1=light, 2=medium, 3=heavy)
+          const intensity = t.steps[s]
+          const velocityMultiplier = intensity === 1 ? 0.5 : intensity === 2 ? 0.75 : 1.0
+          const actualVelocity = Math.round(t.velocity * velocityMultiplier)
+          
+          onNoteOn(fontIdRef.current, t.note, actualVelocity)
+          setTimeout(() => onNoteOff(fontIdRef.current, t.note), Math.min(baseMsPerStep * 0.8, 120))
         }
       })
       setStep(s)
-      stepRef.current = (s + 1) % STEPS
+      const nextStep = (s + 1) % STEPS
+      stepRef.current = nextStep
+
+      // Apply swing: delay odd-numbered steps (offbeats)
+      const swingAmount = swingRef.current / 100
+      const isOffbeat = s % 2 === 0  // steps 0,2,4,6... are on-beats, next ones are off-beats
+      const delayMs = isOffbeat ? baseMsPerStep * (1 + swingAmount * 0.5) : baseMsPerStep * (1 - swingAmount * 0.5)
+      
+      setTimeout(tick, delayMs)
     }
 
     tick() // fire immediately on first tick
-    const id = setInterval(tick, ms)
-    return () => clearInterval(id)
+    return () => {} // cleanup handled by component unmount
   }, [playing, bpm, onNoteOn, onNoteOff])
 
   const toggleStep = (trackId: string, step: number) => {
     setTracks((prev) =>
       prev.map((t) => t.id === trackId
-        ? { ...t, steps: t.steps.map((v, i) => i === step ? !v : v) }
+        ? { ...t, steps: t.steps.map((v, i) => i === step ? (v + 1) % 4 : v) }
         : t,
       ),
     )
@@ -78,7 +92,20 @@ export function DrumMachine({ fonts, onNoteOn, onNoteOff, onApply }: Props) {
   }
 
   const clearTrack = (trackId: string) => {
-    setTracks((prev) => prev.map((t) => t.id === trackId ? { ...t, steps: Array(STEPS).fill(false) } : t))
+    setTracks((prev) => prev.map((t) => t.id === trackId ? { ...t, steps: Array(STEPS).fill(0) } : t))
+  }
+
+  const changeNote = (trackId: string, note: number) => {
+    setTracks((prev) => prev.map((t) => t.id === trackId ? { ...t, note } : t))
+  }
+
+  const changeNoteByName = (trackId: string, name: string) => {
+    const midi = noteNameToMidi(name)
+    if (midi !== null) changeNote(trackId, midi)
+  }
+
+  const loadPreset = (presetKey: keyof typeof DRUM_PRESETS) => {
+    setTracks(DRUM_PRESETS[presetKey].tracks)
   }
 
   return (
@@ -139,6 +166,16 @@ export function DrumMachine({ fonts, onNoteOn, onNoteOff, onApply }: Props) {
             <span style={{ fontSize: 10, color: 'var(--muted)', minWidth: 22 }}>{volume}</span>
           </div>
 
+          {/* Swing */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, borderRight: '1px solid var(--border)', padding: '0 16px', alignSelf: 'stretch' }}>
+            <span style={lbl}>SWING</span>
+            <input type="range" min={0} max={100} value={swing}
+              onChange={(e) => setSwing(Number(e.target.value))}
+              style={{ width: 72 }}
+            />
+            <span style={{ fontSize: 10, color: 'var(--muted)', minWidth: 22 }}>{swing}%</span>
+          </div>
+
           {/* Font selector */}
           {fonts.length > 0 && (
             <div style={{ display: 'flex', alignItems: 'center', gap: 8, borderRight: '1px solid var(--border)', padding: '0 16px', alignSelf: 'stretch' }}>
@@ -161,6 +198,13 @@ export function DrumMachine({ fonts, onNoteOn, onNoteOff, onApply }: Props) {
               STEP {currentStep + 1}
             </span>
           )}
+
+          {/* Presets */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: 6, borderRight: '1px solid var(--border)', padding: '0 16px', alignSelf: 'stretch' }}>
+            <span style={lbl}>PRESET</span>
+            <button onClick={() => loadPreset('lofi')} style={ghostBtn}>LO-FI</button>
+            <button onClick={() => loadPreset('jazz')} style={ghostBtn}>JAZZ</button>
+          </div>
         </>}
 
         {/* Collapse toggle */}
@@ -198,6 +242,26 @@ export function DrumMachine({ fonts, onNoteOn, onNoteOff, onApply }: Props) {
                 </span>
               </div>
 
+              {/* Note selector */}
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 2, padding: '4px 6px', borderRight: '1px solid var(--border)', alignSelf: 'stretch', justifyContent: 'center' }}>
+                <input
+                  type="text"
+                  value={noteName(track.note)}
+                  onChange={(e) => changeNoteByName(track.id, e.target.value.trim().toUpperCase())}
+                  style={{ ...numInput, width: 38, textAlign: 'center', fontSize: 10 }}
+                  title="Note name (e.g., C4, A0)"
+                />
+                <input
+                  type="number"
+                  min={0}
+                  max={127}
+                  value={track.note}
+                  onChange={(e) => changeNote(track.id, Math.max(0, Math.min(127, Number(e.target.value))))}
+                  style={{ ...numInput, width: 38, fontSize: 9 }}
+                  title="MIDI note number"
+                />
+              </div>
+
               {/* Mute + clear buttons */}
               <div style={{ display: 'flex', flexDirection: 'column', gap: 2, padding: '4px 8px', borderRight: '1px solid var(--border)', alignSelf: 'stretch', justifyContent: 'center' }}>
                 <button onClick={() => toggleMute(track.id)} style={{
@@ -210,9 +274,24 @@ export function DrumMachine({ fonts, onNoteOn, onNoteOff, onApply }: Props) {
 
               {/* Steps */}
               <div style={{ display: 'flex', alignItems: 'center', gap: 2, padding: '6px 10px', flex: 1 }}>
-                {track.steps.map((on, i) => {
+                {track.steps.map((intensity, i) => {
                   const isCurrent = i === currentStep && playing
                   const isGroupStart = i > 0 && i % GROUP === 0
+                  
+                  // intensity: 0=off, 1=light, 2=medium, 3=heavy
+                  const getStepColor = () => {
+                    if (isCurrent) {
+                      if (intensity === 0) return '#dbd8d0'
+                      if (intensity === 1) return '#fbbf24'  // light yellow
+                      if (intensity === 2) return '#fb923c'  // orange
+                      return 'var(--accent-1)'  // heavy red
+                    }
+                    if (intensity === 0) return 'var(--bg)'
+                    if (intensity === 1) return '#d4d4d4'  // light gray
+                    if (intensity === 2) return '#8b8b8b'  // medium gray
+                    return 'var(--ink)'  // heavy black
+                  }
+                  
                   return (
                     <div key={i} style={{ display: 'flex', alignItems: 'center' }}>
                       {isGroupStart && (
@@ -222,13 +301,9 @@ export function DrumMachine({ fonts, onNoteOn, onNoteOff, onApply }: Props) {
                         onClick={() => toggleStep(track.id, i)}
                         style={{
                           width: 28, height: 28,
-                          border: `1.5px solid ${on ? 'var(--ink)' : 'var(--border)'}`,
+                          border: `1.5px solid ${intensity > 0 ? 'var(--ink)' : 'var(--border)'}`,
                           borderRadius: 0,
-                          background: isCurrent
-                            ? (on ? 'var(--accent-1)' : '#dbd8d0')
-                            : on
-                            ? 'var(--ink)'
-                            : 'var(--bg)',
+                          background: getStepColor(),
                           cursor: 'pointer',
                           outline: isCurrent ? '2px solid var(--accent-1)' : 'none',
                           outlineOffset: -1,

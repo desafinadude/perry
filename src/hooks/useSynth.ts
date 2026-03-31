@@ -87,42 +87,12 @@ export function useSynth() {
     return { id: fontId, name: fontName, presets }
   }, [ensureAudio, ensureWorklet])
 
-  // ── Initial load (font.sf2) ─────────────────────────────────────────────────
+  // ── Initial load (no default font) ──────────────────────────────────────────
   const init = useCallback(async () => {
     if (status === 'loading' || status === 'ready') return
-    setStatus('loading')
-    setLoadProgress(0)
-
-    try {
-      await ensureAudio()
-      const response = await fetch('/font.sf2')
-      if (!response.ok) throw new Error('Failed to fetch font.sf2')
-
-      const total = parseInt(response.headers.get('content-length') ?? '0')
-      const reader = response.body!.getReader()
-      const chunks: Uint8Array[] = []
-      let received = 0
-      while (true) {
-        const { done, value } = await reader.read()
-        if (done) break
-        chunks.push(value)
-        received += value.length
-        if (total) setLoadProgress(Math.round((received / total) * 88))
-      }
-      const buffer = new Uint8Array(received)
-      let off = 0
-      for (const c of chunks) { buffer.set(c, off); off += c.length }
-      setLoadProgress(90)
-
-      const font = await createFontSynth(buffer.buffer, 'main', 'font.sf2', setLoadProgress)
-      setFonts([font])
-      setStatus('ready')
-    } catch (e) {
-      console.error(e)
-      setErrorMsg(e instanceof Error ? e.message : String(e))
-      setStatus('error')
-    }
-  }, [status, ensureAudio, createFontSynth])
+    setStatus('ready')
+    await ensureAudio()
+  }, [status, ensureAudio])
 
   // ── Load an additional / replacement font ────────────────────────────────────
   const loadFont = useCallback(async (
