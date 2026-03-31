@@ -40,6 +40,14 @@ export interface SavedConfig {
   createdAt: number
 }
 
+export interface SavedBeat {
+  id: string
+  name: string
+  tracks: DrumTrack[]
+  bars: number
+  createdAt: number
+}
+
 export const DEFAULT_DRUM_TRACKS: DrumTrack[] = [
   { id: 'kick',   name: 'KICK',   note: 36, steps: Array(16).fill(0), velocity: 110, muted: false },
   { id: 'snare',  name: 'SNARE',  note: 38, steps: Array(16).fill(0), velocity: 100, muted: false },
@@ -116,5 +124,20 @@ export const saveConfig = (name: string, zones: Zone[]): SavedConfig[] => {
 export const deleteConfig = (id: string): SavedConfig[] => {
   const updated = getSavedConfigs().filter((c) => c.id !== id)
   localStorage.setItem(STORAGE_KEY, JSON.stringify(updated))
+  return updated
+}
+
+const BEATS_STORAGE_KEY = 'perry_beats'
+export const getSavedBeats = (): SavedBeat[] => {
+  try { return JSON.parse(localStorage.getItem(BEATS_STORAGE_KEY) || '[]') } catch { return [] }
+}
+export const saveBeat = (name: string, tracks: DrumTrack[], bars: number): SavedBeat[] => {
+  const updated = [...getSavedBeats(), { id: Date.now().toString(), name, tracks, bars, createdAt: Date.now() }]
+  localStorage.setItem(BEATS_STORAGE_KEY, JSON.stringify(updated))
+  return updated
+}
+export const deleteBeat = (id: string): SavedBeat[] => {
+  const updated = getSavedBeats().filter((b) => b.id !== id)
+  localStorage.setItem(BEATS_STORAGE_KEY, JSON.stringify(updated))
   return updated
 }

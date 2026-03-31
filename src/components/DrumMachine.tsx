@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
-import type { DrumTrack, LoadedFont } from '../types'
-import { DEFAULT_DRUM_TRACKS, DRUM_PRESETS, noteName, noteNameToMidi } from '../types'
+import type { DrumTrack, LoadedFont, SavedBeat } from '../types'
+import { DEFAULT_DRUM_TRACKS, DRUM_PRESETS, noteName, noteNameToMidi, getSavedBeats, saveBeat, deleteBeat } from '../types'
 
 interface Props {
   fonts: LoadedFont[]
@@ -9,7 +9,7 @@ interface Props {
   onApply:   (fontId: string, volume: number) => void
 }
 
-const STEPS = 16
+const STEPS_PER_BAR = 16
 const GROUP = 4  // visual grouping
 
 export function DrumMachine({ fonts, onNoteOn, onNoteOff, onApply }: Props) {
@@ -21,6 +21,12 @@ export function DrumMachine({ fonts, onNoteOn, onNoteOff, onApply }: Props) {
   const [fontId, setFontId]       = useState<string>(fonts[0]?.id ?? '')
   const [collapsed, setCollapsed] = useState(false)
   const [swing, setSwing]         = useState(0) // 0-100: swing amount
+  const [bars, setBars]           = useState(4) // number of bars
+  const [savedBeats, setSavedBeats] = useState<SavedBeat[]>(getSavedBeats())
+  const [beatName, setBeatName]   = useState('')
+  const [showSaved, setShowSaved] = useState(false)
+
+  const totalSteps = bars * STEPS_PER_BAR
 
   // Sync fontId when fonts list first arrives or changes
   useEffect(() => {
@@ -36,12 +42,20 @@ export function DrumMachine({ fonts, onNoteOn, onNoteOff, onApply }: Props) {
   const tracksRef  = useRef(tracks);  tracksRef.current  = tracks
   const fontIdRef  = useRef(fontId);  fontIdRef.current  = fontId
   const swingRef   = useRef(swing);   swingRef.current   = swing
+  const playingRef = useRef(playing); playingRef.current = playing
+  const totalStepsRef = useRef(totalSteps); totalStepsRef.current = totalSteps
   const stepRef    = useRef(0)
+  const timeoutRef = useRef<number | null>(null)  // Track the timeout ID
 
   const stop = useCallback(() => {
     setPlaying(false)
     setStep(-1)
     stepRef.current = 0
+    // Cancel any pending timeout
+    if (timeoutRef.current !== null) {
+      clearTimeout(timeoutRef.current)
+      timeoutRef.current = null
+    }
   }, [])
 
   // Scheduling with swing support
@@ -50,6 +64,9 @@ export function DrumMachine({ fonts, onNoteOn, onNoteOff, onApply }: Props) {
     const baseMsPerStep = (60_000 / bpm) / 4   // 16th note duration
 
     const tick = () => {
+      // Check if still playing (might have been stopped)
+      if (!playingRef.current) return
+      
       const s = stepRef.current
       tracksRef.current.forEach((t) => {
         if (!t.muted && t.steps[s]) {
@@ -63,7 +80,7 @@ export function DrumMachine({ fonts, onNoteOn, onNoteOff, onApply }: Props) {
         }
       })
       setStep(s)
-      const nextStep = (s + 1) % STEPS
+      const nextStep = (s + 1) % totalStepsRef.current
       stepRef.current = nextStep
 
       // Apply swing: delay odd-numbered steps (offbeats)
@@ -71,11 +88,18 @@ export function DrumMachine({ fonts, onNoteOn, onNoteOff, onApply }: Props) {
       const isOffbeat = s % 2 === 0  // steps 0,2,4,6... are on-beats, next ones are off-beats
       const delayMs = isOffbeat ? baseMsPerStep * (1 + swingAmount * 0.5) : baseMsPerStep * (1 - swingAmount * 0.5)
       
-      setTimeout(tick, delayMs)
+      timeoutRef.current = window.setTimeout(tick, delayMs)
     }
 
     tick() // fire immediately on first tick
-    return () => {} // cleanup handled by component unmount
+    
+    return () => {
+      // Cleanup: cancel any pending timeout when effect re-runs or component unmounts
+      if (timeoutRef.current !== null) {
+        clearTimeout(timeoutRef.current)
+        timeoutRef.current = null
+      }
+    }
   }, [playing, bpm, onNoteOn, onNoteOff])
 
   const toggleStep = (trackId: string, step: number) => {
@@ -92,7 +116,7 @@ export function DrumMachine({ fonts, onNoteOn, onNoteOff, onApply }: Props) {
   }
 
   const clearTrack = (trackId: string) => {
-    setTracks((prev) => prev.map((t) => t.id === trackId ? { ...t, steps: Array(STEPS).fill(0) } : t))
+    setTracks((prev) => prev.map((t) => t.id === trackId ? { ...t, steps: Array(totalSteps).fill(0) } : t))
   }
 
   const changeNote = (trackId: string, note: number) => {
@@ -105,8 +129,55 @@ export function DrumMachine({ fonts, onNoteOn, onNoteOff, onApply }: Props) {
   }
 
   const loadPreset = (presetKey: keyof typeof DRUM_PRESETS) => {
-    setTracks(DRUM_PRESETS[presetKey].tracks)
+    const preset = DRUM_PRESETS[presetKey].tracks
+    // Duplicate the 16-step pattern to fill the available bars
+    const extendedTracks = preset.map((t) => {
+      const basePattern = t.steps.slice(0, STEPS_PER_BAR)
+      const extended = []
+      for (let i = 0; i < bars; i++) {
+        extended.push(...basePattern)
+      }
+      return { ...t, steps: extended }
+    })
+    setTracks(extendedTracks)
   }
+
+  const handleBarsChange = (newBars: number) => {
+    setBars(newBars)
+    const newTotalSteps = newBars * STEPS_PER_BAR
+    setTracks((prev) => prev.map((t) => {
+      if (t.steps.length === newTotalSteps) return t
+      if (t.steps.length > newTotalSteps) {
+        // Shrink: truncate
+        return { ...t, steps: t.steps.slice(0, newTotalSteps) }
+      } else {
+        // Grow: repeat pattern
+        const extended = [...t.steps]
+        while (extended.length < newTotalSteps) {
+          const remaining = newTotalSteps - extended.length
+          const toCopy = Math.min(STEPS_PER_BAR, remaining)
+          extended.push(...t.steps.slice(0, toCopy))
+        }
+        return { ...t, steps: extended }
+      }
+    }))
+  }
+
+  const handleSaveBeat = useCallback(() => {
+    const name = beatName.trim() || `Beat ${savedBeats.length + 1}`
+    setSavedBeats(saveBeat(name, tracks, bars))
+    setBeatName('')
+  }, [beatName, savedBeats.length, tracks, bars])
+
+  const handleLoadBeat = useCallback((beat: SavedBeat) => {
+    setBars(beat.bars)
+    setTracks(beat.tracks)
+    setShowSaved(false)
+  }, [])
+
+  const handleDeleteBeat = useCallback((id: string) => {
+    setSavedBeats(deleteBeat(id))
+  }, [])
 
   return (
     <div style={{ borderTop: '2px solid var(--ink)', background: 'var(--surface)', flexShrink: 0 }}>
@@ -156,6 +227,16 @@ export function DrumMachine({ fonts, onNoteOn, onNoteOff, onApply }: Props) {
             />
           </div>
 
+          {/* Bars */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, borderRight: '1px solid var(--border)', padding: '0 16px', alignSelf: 'stretch' }}>
+            <span style={lbl}>BARS</span>
+            <input
+              type="number" min={1} max={8} value={bars}
+              onChange={(e) => handleBarsChange(Math.max(1, Math.min(8, Number(e.target.value))))}
+              style={{ ...numInput, width: 42 }}
+            />
+          </div>
+
           {/* Volume */}
           <div style={{ display: 'flex', alignItems: 'center', gap: 8, borderRight: '1px solid var(--border)', padding: '0 16px', alignSelf: 'stretch' }}>
             <span style={lbl}>VOL</span>
@@ -202,9 +283,66 @@ export function DrumMachine({ fonts, onNoteOn, onNoteOff, onApply }: Props) {
           {/* Presets */}
           <div style={{ display: 'flex', alignItems: 'center', gap: 6, borderRight: '1px solid var(--border)', padding: '0 16px', alignSelf: 'stretch' }}>
             <span style={lbl}>PRESET</span>
-            <button onClick={() => loadPreset('lofi')} style={ghostBtn}>LO-FI</button>
-            <button onClick={() => loadPreset('jazz')} style={ghostBtn}>JAZZ</button>
+            <select
+              onChange={(e) => { if (e.target.value) loadPreset(e.target.value as keyof typeof DRUM_PRESETS); e.target.value = '' }}
+              value=""
+              style={sel}
+            >
+              <option value="">Select...</option>
+              <option value="lofi">Lo-Fi Chill</option>
+              <option value="jazz">Jazz Swing</option>
+            </select>
           </div>
+
+          {/* Save beat */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: 6, borderRight: '1px solid var(--border)', padding: '0 16px', alignSelf: 'stretch' }}>
+            <input
+              value={beatName}
+              onChange={(e) => setBeatName(e.target.value)}
+              onKeyDown={(e) => e.key === 'Enter' && handleSaveBeat()}
+              placeholder="beat name"
+              style={{ background: 'transparent', border: 'none', borderBottom: '1px solid var(--border)', color: 'var(--ink)', fontSize: 11, padding: '2px 4px', outline: 'none', width: 90 }}
+            />
+            <button onClick={handleSaveBeat} style={ghostBtn}>SAVE</button>
+          </div>
+
+          {/* Saved beats */}
+          {savedBeats.length > 0 && (
+            <div style={{ position: 'relative', alignSelf: 'stretch', display: 'flex', alignItems: 'center', borderRight: '1px solid var(--border)' }}>
+              <button onClick={() => setShowSaved((v) => !v)} style={{
+                ...ghostBtn, margin: '0 16px',
+                background: showSaved ? 'var(--accent-2)' : 'transparent',
+                color: showSaved ? '#fff' : 'var(--ink)',
+                border: showSaved ? '1.5px solid var(--accent-2)' : '1.5px solid var(--ink)',
+              }}>
+                BEATS {showSaved ? '▲' : '▼'}
+              </button>
+              {showSaved && (
+                <div style={{
+                  position: 'absolute', top: '100%', left: 16, zIndex: 100,
+                  background: 'var(--bg)', border: '1.5px solid var(--ink)',
+                  minWidth: 220, boxShadow: '4px 4px 0 var(--ink)',
+                }}>
+                  {savedBeats.map((beat) => (
+                    <div key={beat.id} style={{ display: 'flex', alignItems: 'center', borderBottom: '1px solid var(--border)' }}>
+                      <button onClick={() => handleLoadBeat(beat)} style={{
+                        flex: 1, textAlign: 'left', background: 'transparent', border: 'none',
+                        color: 'var(--ink)', cursor: 'pointer', fontFamily: 'var(--font-mono)',
+                        fontSize: 11, padding: '9px 12px', letterSpacing: '0.05em',
+                      }}>
+                        {beat.name}
+                        <span style={{ marginLeft: 8, color: 'var(--muted)', fontSize: 10 }}>{beat.bars}B</span>
+                      </button>
+                      <button onClick={() => handleDeleteBeat(beat.id)} style={{
+                        background: 'transparent', border: 'none', borderLeft: '1px solid var(--border)',
+                        color: 'var(--muted)', cursor: 'pointer', padding: '0 12px', alignSelf: 'stretch', fontSize: 14,
+                      }}>×</button>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
         </>}
 
         {/* Collapse toggle */}
