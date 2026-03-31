@@ -15,14 +15,14 @@ interface Props {
   onPlayingChange: (playing: boolean) => void
   bpm: number
   swing: number
-  onNoteOn: (fontId: string, note: number, velocity: number) => void
-  onNoteOff: (fontId: string, note: number) => void
+  onMelodicNoteOn: (track: MelodicTrack, note: number, velocity: number) => void
+  onMelodicNoteOff: (track: MelodicTrack, note: number) => void
 }
 
 const STEPS_PER_BAR = 16
 const PIANO_RANGE = { min: 36, max: 84 } // C2 to C6
 
-export function PianoRoll({ tracks, bars, fonts, presetsByFont, onTracksChange, onAddTrack, onRemoveTrack, playing, onPlayingChange, bpm, swing, onNoteOn, onNoteOff }: Props) {
+export function PianoRoll({ tracks, bars, fonts, presetsByFont, onTracksChange, onAddTrack, onRemoveTrack, playing, onPlayingChange, bpm, swing, onMelodicNoteOn, onMelodicNoteOff }: Props) {
   const [selectedTrackId, setSelectedTrackId] = useState<string | null>(tracks[0]?.id ?? null)
   const [currentStep, setStep] = useState(-1)
   const totalSteps = bars * STEPS_PER_BAR
@@ -47,7 +47,7 @@ export function PianoRoll({ tracks, bars, fonts, presetsByFont, onTracksChange, 
     activeNotesRef.current.forEach((note, trackId) => {
       const track = tracksRef.current.find(t => t.id === trackId)
       if (track) {
-        onNoteOff(track.fontId, note)
+        onMelodicNoteOff(track, note)
       }
     })
     activeNotesRef.current.clear()
@@ -56,7 +56,7 @@ export function PianoRoll({ tracks, bars, fonts, presetsByFont, onTracksChange, 
       clearTimeout(timeoutRef.current)
       timeoutRef.current = null
     }
-  }, [onPlayingChange, onNoteOff])
+  }, [onPlayingChange, onMelodicNoteOff])
 
   // Playback scheduling
   useEffect(() => {
@@ -75,11 +75,11 @@ export function PianoRoll({ tracks, bars, fonts, presetsByFont, onTracksChange, 
         track.notes.forEach((noteData) => {
           if (noteData.start === s) {
             // Start note
-            onNoteOn(track.fontId, noteData.note, noteData.velocity)
+            onMelodicNoteOn(track, noteData.note, noteData.velocity)
             // Schedule note off based on length
             const noteOffDelay = baseMsPerStep * noteData.length * 0.8
             setTimeout(() => {
-              onNoteOff(track.fontId, noteData.note)
+              onMelodicNoteOff(track, noteData.note)
             }, noteOffDelay)
           }
         })
@@ -105,7 +105,7 @@ export function PianoRoll({ tracks, bars, fonts, presetsByFont, onTracksChange, 
         timeoutRef.current = null
       }
     }
-  }, [playing, bpm, onNoteOn, onNoteOff])
+  }, [playing, bpm, onMelodicNoteOn, onMelodicNoteOff])
 
   const updateTrack = useCallback((id: string, updates: Partial<MelodicTrack>) => {
     onTracksChange(tracks.map((t) => t.id === id ? { ...t, ...updates } : t))
@@ -145,131 +145,69 @@ export function PianoRoll({ tracks, bars, fonts, presetsByFont, onTracksChange, 
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', height: '100%', background: 'var(--surface)' }}>
-      {/* Track selector & controls */}
-      <div style={{ 
-        display: 'flex', alignItems: 'center', gap: 12, padding: '12px 16px',
-        borderBottom: '2px solid var(--ink)', background: 'var(--bg)',
-      }}>
-        <span style={{ fontFamily: 'var(--font-mono)', fontSize: 10, color: 'var(--muted)', letterSpacing: '0.1em' }}>
-          TRACK
-        </span>
-        
-        {tracks.map((track) => (
-          <button
-            key={track.id}
-            onClick={() => setSelectedTrackId(track.id)}
+      {/* Track controls */}
+      {selectedTrack && (
+        <div style={{ 
+          display: 'flex', alignItems: 'center', gap: 12, padding: '12px 16px',
+          borderBottom: '2px solid var(--ink)', background: 'var(--bg)',
+        }}>
+          <span style={{ fontFamily: 'var(--font-mono)', fontSize: 10, color: 'var(--muted)', letterSpacing: '0.1em' }}>
+            FONT
+          </span>
+          <select
+            value={selectedTrack.fontId}
+            onChange={(e) => changeFontId(selectedTrack.id, e.target.value)}
             style={{
-              background: selectedTrackId === track.id ? 'var(--accent-1)' : 'transparent',
-              border: `1.5px solid ${selectedTrackId === track.id ? 'var(--accent-1)' : 'var(--border)'}`,
-              borderRadius: 0,
-              color: selectedTrackId === track.id ? '#fff' : 'var(--ink)',
-              cursor: 'pointer',
-              fontFamily: 'var(--font-mono)',
-              fontSize: 11,
-              letterSpacing: '0.1em',
-              padding: '6px 12px',
+              background: 'var(--bg)', border: '1px solid var(--border)',
+              borderRadius: 0, color: 'var(--ink)', fontSize: 11, padding: '3px 5px',
             }}
           >
-            {track.name}
+            {fonts.map((f) => (
+              <option key={f.id} value={f.id}>{f.name.replace(/\.[^.]+$/, '')}</option>
+            ))}
+          </select>
+
+          <span style={{ fontFamily: 'var(--font-mono)', fontSize: 10, color: 'var(--muted)', letterSpacing: '0.1em' }}>
+            PRESET
+          </span>
+          <select
+            value={`${selectedTrack.bank}:${selectedTrack.program}`}
+            onChange={(e) => {
+              const [bank, program] = e.target.value.split(':').map(Number)
+              changeProgram(selectedTrack.id, bank, program)
+            }}
+            style={{
+              background: 'var(--bg)', border: '1px solid var(--border)',
+              borderRadius: 0, color: 'var(--ink)', fontSize: 11, padding: '3px 5px',
+              minWidth: 150,
+            }}
+          >
+            {(presetsByFont[selectedTrack.fontId] ?? [])
+              .filter((p) => !p.isDrum)
+              .map((p) => (
+                <option key={`${p.bank}:${p.program}`} value={`${p.bank}:${p.program}`}>
+                  {p.name}
+                </option>
+              ))}
+          </select>
+
+          <button
+            onClick={() => updateTrack(selectedTrack.id, { muted: !selectedTrack.muted })}
+            style={{
+              background: selectedTrack.muted ? 'var(--muted)' : 'transparent',
+              border: '1.5px solid var(--border)',
+              borderRadius: 0,
+              color: selectedTrack.muted ? '#fff' : 'var(--ink)',
+              cursor: 'pointer',
+              fontFamily: 'var(--font-mono)',
+              fontSize: 10,
+              padding: '4px 8px',
+            }}
+          >
+            {selectedTrack.muted ? 'MUTED' : 'MUTE'}
           </button>
-        ))}
-        
-        <button onClick={onAddTrack} style={{
-          background: 'transparent',
-          border: '1.5px solid var(--border)',
-          borderRadius: 0,
-          color: 'var(--muted)',
-          cursor: 'pointer',
-          fontFamily: 'var(--font-mono)',
-          fontSize: 16,
-          padding: '4px 10px',
-        }}>
-          +
-        </button>
-
-        {/* Track settings */}
-        {selectedTrack && (
-          <>
-            <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 12 }}>
-              <span style={{ fontFamily: 'var(--font-mono)', fontSize: 10, color: 'var(--muted)', letterSpacing: '0.1em' }}>
-                FONT
-              </span>
-              <select
-                value={selectedTrack.fontId}
-                onChange={(e) => changeFontId(selectedTrack.id, e.target.value)}
-                style={{
-                  background: 'var(--bg)', border: '1px solid var(--border)',
-                  borderRadius: 0, color: 'var(--ink)', fontSize: 11, padding: '3px 5px',
-                }}
-              >
-                {fonts.map((f) => (
-                  <option key={f.id} value={f.id}>{f.name.replace(/\.[^.]+$/, '')}</option>
-                ))}
-              </select>
-
-              <span style={{ fontFamily: 'var(--font-mono)', fontSize: 10, color: 'var(--muted)', letterSpacing: '0.1em' }}>
-                PRESET
-              </span>
-              <select
-                value={`${selectedTrack.bank}:${selectedTrack.program}`}
-                onChange={(e) => {
-                  const [bank, program] = e.target.value.split(':').map(Number)
-                  changeProgram(selectedTrack.id, bank, program)
-                }}
-                style={{
-                  background: 'var(--bg)', border: '1px solid var(--border)',
-                  borderRadius: 0, color: 'var(--ink)', fontSize: 11, padding: '3px 5px',
-                  minWidth: 150,
-                }}
-              >
-                {(presetsByFont[selectedTrack.fontId] ?? [])
-                  .filter((p) => !p.isDrum)
-                  .map((p) => (
-                    <option key={`${p.bank}:${p.program}`} value={`${p.bank}:${p.program}`}>
-                      {p.name}
-                    </option>
-                  ))}
-              </select>
-
-              <button
-                onClick={() => updateTrack(selectedTrack.id, { muted: !selectedTrack.muted })}
-                style={{
-                  background: selectedTrack.muted ? 'var(--muted)' : 'transparent',
-                  border: '1.5px solid var(--border)',
-                  borderRadius: 0,
-                  color: selectedTrack.muted ? '#fff' : 'var(--ink)',
-                  cursor: 'pointer',
-                  fontFamily: 'var(--font-mono)',
-                  fontSize: 10,
-                  padding: '4px 8px',
-                }}
-              >
-                {selectedTrack.muted ? 'MUTED' : 'MUTE'}
-              </button>
-
-              {tracks.length > 1 && (
-                <button
-                  onClick={() => {
-                    onRemoveTrack(selectedTrack.id)
-                    setSelectedTrackId(tracks.find((t) => t.id !== selectedTrack.id)?.id ?? null)
-                  }}
-                  style={{
-                    background: 'transparent',
-                    border: '1.5px solid var(--border)',
-                    borderRadius: 0,
-                    color: 'var(--muted)',
-                    cursor: 'pointer',
-                    fontSize: 14,
-                    padding: '2px 8px',
-                  }}
-                >
-                  ×
-                </button>
-              )}
-            </div>
-          </>
-        )}
-      </div>
+        </div>
+      )}
 
       {/* Piano roll grid */}
       {selectedTrack && (

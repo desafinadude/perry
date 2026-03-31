@@ -43,7 +43,7 @@ export default function App() {
     init, loadFont, removeFont,
     applyZone, noteOn, noteOff, sendCC, sendPitchBend,
     applyDrums, drumNoteOn, drumNoteOff,
-    applyMelodicTrack,
+    applyMelodicTrack, melodicNoteOn, melodicNoteOff,
     allNotesOff, firstMelodicPreset,
   } = useSynth()
 
@@ -516,6 +516,8 @@ export default function App() {
           onNoteOff={drumNoteOff}
           onApplyDrums={applyDrums}
           onApplyMelodic={applyMelodicTrack}
+          onMelodicNoteOn={melodicNoteOn}
+          onMelodicNoteOff={melodicNoteOff}
           playing={playing}
           onPlayingChange={setPlaying}
           bpm={bpm}

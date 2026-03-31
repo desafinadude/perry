@@ -1,4 +1,4 @@
-import { useState, useCallback } from 'react'
+import { useState, useCallback, useEffect } from 'react'
 import { DrumMachine } from './DrumMachine'
 import { PianoRoll } from './PianoRoll'
 import type { LoadedFont, DrumTrack, MelodicTrack, Preset, SequencerState, SavedProject } from '../types'
@@ -11,6 +11,8 @@ interface Props {
   onNoteOff: (fontId: string, note: number) => void
   onApplyDrums: (fontId: string, volume: number) => void
   onApplyMelodic: (track: MelodicTrack) => void
+  onMelodicNoteOn: (track: MelodicTrack, note: number, velocity: number) => void
+  onMelodicNoteOff: (track: MelodicTrack, note: number) => void
   // Playback state from parent
   playing: boolean
   onPlayingChange: (playing: boolean) => void
@@ -19,13 +21,20 @@ interface Props {
   bars: number
 }
 
-type TabType = 'drums' | 'melodic'
+type TabType = 'drums' | string // 'drums' or melodic track ID
 
 let trackIdCounter = 1
 
-export function Sequencer({ fonts, presetsByFont, onNoteOn, onNoteOff, onApplyDrums, onApplyMelodic, playing, onPlayingChange, bpm, swing, bars }: Props) {
+export function Sequencer({ fonts, presetsByFont, onNoteOn, onNoteOff, onApplyDrums, onApplyMelodic, onMelodicNoteOn, onMelodicNoteOff, playing, onPlayingChange, bpm, swing, bars }: Props) {
   const [activeTab, setActiveTab] = useState<TabType>('drums')
   const [melodic, setMelodic] = useState<MelodicTrack[]>([])
+  
+  // Update selected tab if the active melodic track is removed
+  useEffect(() => {
+    if (activeTab !== 'drums' && !melodic.find(t => t.id === activeTab)) {
+      setActiveTab('drums')
+    }
+  }, [melodic, activeTab])
 
   const handleAddMelodicTrack = useCallback(() => {
     const fontId = fonts[0]?.id ?? 'main'
@@ -46,25 +55,24 @@ export function Sequencer({ fonts, presetsByFont, onNoteOn, onNoteOff, onApplyDr
     setMelodic([...melodic, newTrack])
     // Apply immediately
     onApplyMelodic(newTrack)
+    // Switch to new track
+    setActiveTab(newTrack.id)
   }, [melodic, fonts, presetsByFont, onApplyMelodic])
 
   const handleRemoveMelodicTrack = useCallback((id: string) => {
     setMelodic((prev) => prev.filter((t) => t.id !== id))
   }, [])
 
-  const handleMelodicChange = useCallback((tracks: MelodicTrack[]) => {
-    setMelodic(tracks)
+  const handleMelodicChange = useCallback((updatedTrack: MelodicTrack) => {
+    setMelodic((prev) => prev.map((t) => t.id === updatedTrack.id ? updatedTrack : t))
     // Apply track changes
-    tracks.forEach((t) => onApplyMelodic(t))
+    onApplyMelodic(updatedTrack)
   }, [onApplyMelodic])
 
   const handleTabChange = useCallback((tab: TabType) => {
-    // Stop playback when switching tabs
-    if (playing) {
-      onPlayingChange(false)
-    }
+    // Don't stop playback when switching tabs
     setActiveTab(tab)
-  }, [playing, onPlayingChange])
+  }, [])
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', height: '100%', background: 'var(--surface)' }}>
@@ -75,6 +83,7 @@ export function Sequencer({ fonts, presetsByFont, onNoteOn, onNoteOff, onApplyDr
         borderBottom: '2px solid var(--ink)',
         background: 'var(--surface)',
       }}>
+        {/* DRUMS tab */}
         <button
           onClick={() => handleTabChange('drums')}
           style={{
@@ -93,27 +102,64 @@ export function Sequencer({ fonts, presetsByFont, onNoteOn, onNoteOff, onApplyDr
           DRUMS
         </button>
         
+        {/* Melodic track tabs */}
+        {melodic.map((track) => (
+          <div key={track.id} style={{ display: 'flex', alignItems: 'stretch' }}>
+            <button
+              onClick={() => handleTabChange(track.id)}
+              style={{
+                background: activeTab === track.id ? 'var(--ink)' : 'transparent',
+                border: 'none',
+                borderRight: '1px solid var(--border)',
+                color: activeTab === track.id ? 'var(--bg)' : 'var(--ink)',
+                cursor: 'pointer',
+                fontFamily: 'var(--font-display)',
+                fontSize: 16,
+                letterSpacing: '0.1em',
+                padding: '8px 16px',
+                transition: 'background 0.2s, color 0.2s',
+              }}
+            >
+              {track.name}
+            </button>
+            {/* Remove button */}
+            <button
+              onClick={() => handleRemoveMelodicTrack(track.id)}
+              style={{
+                background: activeTab === track.id ? 'var(--ink)' : 'transparent',
+                border: 'none',
+                borderRight: '1px solid var(--border)',
+                color: activeTab === track.id ? 'var(--bg)' : 'var(--muted)',
+                cursor: 'pointer',
+                fontSize: 14,
+                padding: '0 8px',
+              }}
+            >
+              ×
+            </button>
+          </div>
+        ))}
+        
+        {/* Add new track button */}
         <button
-          onClick={() => handleTabChange('melodic')}
+          onClick={handleAddMelodicTrack}
           style={{
-            background: activeTab === 'melodic' ? 'var(--ink)' : 'transparent',
+            background: 'transparent',
             border: 'none',
             borderRight: '1px solid var(--border)',
-            color: activeTab === 'melodic' ? 'var(--bg)' : 'var(--ink)',
+            color: 'var(--muted)',
             cursor: 'pointer',
-            fontFamily: 'var(--font-display)',
-            fontSize: 16,
-            letterSpacing: '0.1em',
+            fontSize: 18,
             padding: '8px 16px',
-            transition: 'background 0.2s, color 0.2s',
           }}
         >
-          MELODIC {melodic.length > 0 && `(${melodic.length})`}
+          +
         </button>
       </div>
 
-      {/* Content - keep both mounted to preserve state */}
+      {/* Content - keep all mounted to preserve state */}
       <div style={{ flex: 1, overflow: 'hidden', position: 'relative' }}>
+        {/* DRUMS */}
         <div style={{ 
           position: 'absolute',
           top: 0,
@@ -136,31 +182,34 @@ export function Sequencer({ fonts, presetsByFont, onNoteOn, onNoteOff, onApplyDr
           />
         </div>
         
-        <div style={{ 
-          position: 'absolute',
-          top: 0,
-          left: 0,
-          right: 0,
-          bottom: 0,
-          display: activeTab === 'melodic' ? 'flex' : 'none',
-          flexDirection: 'column',
-        }}>
-          <PianoRoll
-            tracks={melodic}
-            bars={bars}
-            fonts={fonts}
-            presetsByFont={presetsByFont}
-            onTracksChange={handleMelodicChange}
-            onAddTrack={handleAddMelodicTrack}
-            onRemoveTrack={handleRemoveMelodicTrack}
-            playing={playing}
-            onPlayingChange={onPlayingChange}
-            bpm={bpm}
-            swing={swing}
-            onNoteOn={onNoteOn}
-            onNoteOff={onNoteOff}
-          />
-        </div>
+        {/* Each melodic track */}
+        {melodic.map((track) => (
+          <div key={track.id} style={{ 
+            position: 'absolute',
+            top: 0,
+            left: 0,
+            right: 0,
+            bottom: 0,
+            display: activeTab === track.id ? 'flex' : 'none',
+            flexDirection: 'column',
+          }}>
+            <PianoRoll
+              tracks={[track]}
+              bars={bars}
+              fonts={fonts}
+              presetsByFont={presetsByFont}
+              onTracksChange={(tracks) => tracks[0] && handleMelodicChange(tracks[0])}
+              onAddTrack={handleAddMelodicTrack}
+              onRemoveTrack={handleRemoveMelodicTrack}
+              playing={playing}
+              onPlayingChange={onPlayingChange}
+              bpm={bpm}
+              swing={swing}
+              onMelodicNoteOn={onMelodicNoteOn}
+              onMelodicNoteOff={onMelodicNoteOff}
+            />
+          </div>
+        ))}
       </div>
     </div>
   )
