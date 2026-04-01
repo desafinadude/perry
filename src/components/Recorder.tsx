@@ -4,9 +4,11 @@ import { useMetronome } from '../hooks/useMetronome'
 interface RecordedNote {
   note: number
   velocity: number
-  timestamp: number
-  duration?: number
+  timestamp: number  // in ticks (480 per quarter note)
+  duration?: number  // in ticks
 }
+
+const TICKS_PER_QUARTER = 480
 
 export interface RecorderHandle {
   recordNoteOn: (note: number, velocity: number) => void
@@ -16,10 +18,11 @@ export interface RecorderHandle {
 interface Props {
   onPlayNoteOn?: (note: number, velocity: number) => void
   onPlayNoteOff?: (note: number) => void
+  onEnsureAudioReady?: () => Promise<void>
 }
 
 // Simple MIDI file parser
-function parseMidiFile(buffer: ArrayBuffer): RecordedNote[] {
+function parseMidiFile(buffer: ArrayBuffer): { notes: RecordedNote[]; bpm: number } {
   const data = new Uint8Array(buffer)
   let offset = 0
   
@@ -59,8 +62,10 @@ function parseMidiFile(buffer: ArrayBuffer): RecordedNote[] {
   const division = read16()
   
   const ticksPerQuarterNote = division & 0x7FFF
-  const microsecondsPerQuarterNote = 500000 // Default: 120 BPM
-  const microsecondsPerTick = microsecondsPerQuarterNote / ticksPerQuarterNote
+  
+  // Default tempo (120 BPM = 500000 microseconds per quarter note)
+  let microsecondsPerQuarterNote = 500000
+  let bpm = 120
   
   const notes: RecordedNote[] = []
   const activeNotes = new Map<number, { timestamp: number; velocity: number }>()
@@ -96,7 +101,9 @@ function parseMidiFile(buffer: ArrayBuffer): RecordedNote[] {
       if (statusType === 0x90) { // Note On
         const note = data[offset++]
         const velocity = data[offset++]
-        const timestamp = (currentTick * microsecondsPerTick) / 1000 // Convert to ms
+        
+        // Store timestamp in TICKS, not milliseconds
+        const timestamp = currentTick
         
         if (velocity > 0) {
           activeNotes.set(note, { timestamp, velocity })
@@ -108,7 +115,7 @@ function parseMidiFile(buffer: ArrayBuffer): RecordedNote[] {
               note,
               velocity: active.velocity,
               timestamp: active.timestamp,
-              duration: timestamp - active.timestamp,
+              duration: timestamp - active.timestamp, // Duration in ticks
             })
             activeNotes.delete(note)
           }
@@ -116,7 +123,7 @@ function parseMidiFile(buffer: ArrayBuffer): RecordedNote[] {
       } else if (statusType === 0x80) { // Note Off
         const note = data[offset++]
         offset++ // velocity (ignored)
-        const timestamp = (currentTick * microsecondsPerTick) / 1000
+        const timestamp = currentTick // In ticks
         
         const active = activeNotes.get(note)
         if (active) {
@@ -124,7 +131,7 @@ function parseMidiFile(buffer: ArrayBuffer): RecordedNote[] {
             note,
             velocity: active.velocity,
             timestamp: active.timestamp,
-            duration: timestamp - active.timestamp,
+            duration: timestamp - active.timestamp, // Duration in ticks
           })
           activeNotes.delete(note)
         }
@@ -135,6 +142,14 @@ function parseMidiFile(buffer: ArrayBuffer): RecordedNote[] {
       } else if (status === 0xFF) { // Meta event
         const metaType = data[offset++]
         const metaLength = readVarLen()
+        
+        // Check for tempo meta event (FF 51 03)
+        if (metaType === 0x51 && metaLength === 3) {
+          microsecondsPerQuarterNote = (data[offset] << 16) | (data[offset + 1] << 8) | data[offset + 2]
+          bpm = Math.round(60000000 / microsecondsPerQuarterNote)
+          console.log('Found tempo in MIDI file:', bpm, 'BPM')
+        }
+        
         offset += metaLength
       } else if (status === 0xF0 || status === 0xF7) { // SysEx
         const sysexLength = readVarLen()
@@ -143,18 +158,24 @@ function parseMidiFile(buffer: ArrayBuffer): RecordedNote[] {
     }
   }
   
-  return notes.sort((a, b) => a.timestamp - b.timestamp)
+  return { 
+    notes: notes.sort((a, b) => a.timestamp - b.timestamp),
+    bpm
+  }
 }
 
 
 export const Recorder = forwardRef<RecorderHandle, Props>((props, ref) => {
-  const { onPlayNoteOn, onPlayNoteOff } = props
+  const { onPlayNoteOn, onPlayNoteOff, onEnsureAudioReady } = props
   const [isRecording, setIsRecording] = useState(false)
   const [recordedNotes, setRecordedNotes] = useState<RecordedNote[]>([])
   const [isPlaying, setIsPlaying] = useState(false)
   const [showPianoRoll, setShowPianoRoll] = useState(false)
   const [zoomLevel, setZoomLevel] = useState(1.0) // For horizontal zoom
+  const [playheadKey, setPlayheadKey] = useState(0) // Force playhead animation restart
+  const [seekPosition, setSeekPosition] = useState(0) // Current seek position in ticks
   const startTimeRef = useRef<number>(0)
+  const recordingBpmRef = useRef<number>(120) // BPM when recording started
   const activeNotesRef = useRef<Map<number, number[]>>(new Map()) // note -> array of start times (for overlapping notes)
   const playbackTimeoutsRef = useRef<number[]>([]) // Store timeout IDs for cleanup
   const midiFileInputRef = useRef<HTMLInputElement>(null)
@@ -170,21 +191,28 @@ export const Recorder = forwardRef<RecorderHandle, Props>((props, ref) => {
       playbackTimeoutsRef.current = []
       metronome.stop()
     }
-  }, [metronome])
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []) // Only run on mount/unmount
 
-  const handleRecord = useCallback(() => {
+  const handleRecord = useCallback(async () => {
     if (!isRecording) {
       // Cancel any ongoing playback before recording
       playbackTimeoutsRef.current.forEach(id => window.clearTimeout(id))
       playbackTimeoutsRef.current = []
       
+      // Store the BPM at recording time
+      recordingBpmRef.current = metronome.bpm
+      console.log('Recording at BPM:', recordingBpmRef.current)
+      
       // Start metronome first if enabled (to establish timing reference)
       if (metronome.isEnabled) {
-        metronome.start()
+        await metronome.start()
         // Use metronome's start time as recording reference
         startTimeRef.current = metronome.getStartTime()
+        console.log('Recording started with metronome at', startTimeRef.current)
       } else {
         startTimeRef.current = performance.now()
+        console.log('Recording started at', startTimeRef.current)
       }
       // Start recording
       setIsRecording(true)
@@ -193,6 +221,7 @@ export const Recorder = forwardRef<RecorderHandle, Props>((props, ref) => {
     } else {
       // Stop recording and disarm
       setIsRecording(false)
+      console.log('Recording stopped, notes:', recordedNotes.length)
       // Stop metronome
       metronome.stop()
       // Finalize any still-active notes
@@ -237,8 +266,17 @@ export const Recorder = forwardRef<RecorderHandle, Props>((props, ref) => {
       playbackTimeoutsRef.current = []
       
       const buffer = await file.arrayBuffer()
-      const notes = parseMidiFile(buffer)
+      const { notes, bpm } = parseMidiFile(buffer)
+      console.log('Loaded MIDI file:', notes.length, 'notes')
+      console.log('First note:', notes[0])
+      console.log('Last note:', notes[notes.length - 1])
+      console.log('Tempo:', bpm, 'BPM')
+      
       setRecordedNotes(notes)
+      // Update the recording BPM and current metronome BPM to match the imported file
+      recordingBpmRef.current = bpm
+      metronome.setBpm(bpm)
+      
       setIsRecording(false)
       setIsPlaying(false)
       activeNotesRef.current.clear()
@@ -249,61 +287,129 @@ export const Recorder = forwardRef<RecorderHandle, Props>((props, ref) => {
     }
   }, [metronome])
 
-  const handlePlay = useCallback(() => {
+  const handlePlay = useCallback(async () => {
     if (recordedNotes.length === 0 || !onPlayNoteOn || !onPlayNoteOff) return
+    
+    console.log('Starting playback of', recordedNotes.length, 'notes')
+    console.log('First note timestamp:', recordedNotes[0]?.timestamp, 'ticks')
+    console.log('Playback BPM:', metronome.bpm, 'Recorded BPM:', recordingBpmRef.current)
+    
+    // Ensure synth audio context is ready
+    if (onEnsureAudioReady) {
+      await onEnsureAudioReady()
+    }
     
     // Cancel any previous playback timeouts
     playbackTimeoutsRef.current.forEach(id => window.clearTimeout(id))
     playbackTimeoutsRef.current = []
     
     setIsPlaying(true)
+    setSeekPosition(0) // Start from beginning
+    setPlayheadKey(prev => prev + 1) // Reset animation
     
-    // Start metronome if enabled (synced with playback start)
-    if (metronome.isEnabled) {
-      metronome.start()
-    }
+    // Record when playback starts (for timing reference)
+    const playbackStartTime = performance.now()
+    console.log('Playback started at', playbackStartTime)
+    
+    // Don't start live metronome - we'll generate clicks as scheduled events instead
     
     // Sort notes by timestamp
     const sortedNotes = [...recordedNotes].sort((a, b) => a.timestamp - b.timestamp)
     
-    // Schedule all note events
-    sortedNotes.forEach((note) => {
-      // Note On
+    // Convert ticks to milliseconds using current BPM
+    const msPerQuarter = 60000 / metronome.bpm
+    const ticksToMs = (ticks: number) => (ticks * msPerQuarter) / TICKS_PER_QUARTER
+    
+    console.log('Sorted notes for playback:')
+    sortedNotes.slice(0, 3).forEach((n, i) => {
+      const ms = ticksToMs(n.timestamp)
+      console.log(`  [${i}] Note ${n.note} at ${n.timestamp} ticks (${ms.toFixed(1)}ms), duration ${n.duration} ticks`)
+    })
+    
+    // Generate metronome click events if enabled
+    if (metronome.isEnabled) {
+      const maxTicks = Math.max(...sortedNotes.map(n => n.timestamp + (n.duration || 0)), TICKS_PER_QUARTER * 4)
+      const numBeats = Math.ceil(maxTicks / TICKS_PER_QUARTER) + 1
+      
+      console.log(`Generating ${numBeats} metronome clicks`)
+      
+      // Create a click sound using the synth (high pitched short note)
+      for (let i = 0; i < numBeats; i++) {
+        const beatTicks = i * TICKS_PER_QUARTER
+        const beatMs = ticksToMs(beatTicks)
+        const isDownbeat = i % 4 === 0
+        
+        // Use MIDI note 108 (high C) for click, different velocity for downbeat
+        const clickId = window.setTimeout(() => {
+          if (onPlayNoteOn && onPlayNoteOff) {
+            const clickNote = isDownbeat ? 108 : 107 // Higher pitch for downbeat
+            const clickVelocity = isDownbeat ? 100 : 60
+            onPlayNoteOn(clickNote, clickVelocity)
+            // Very short click duration
+            setTimeout(() => onPlayNoteOff(clickNote), 50)
+          }
+        }, beatMs)
+        playbackTimeoutsRef.current.push(clickId)
+      }
+    }
+    
+    // Schedule all note events relative to playback start time
+    sortedNotes.forEach((note, index) => {
+      const delayMs = ticksToMs(note.timestamp)
+      
+      // Note On - schedule relative to now
+      console.log(`Scheduling note ${index}: ${note.note} for ${delayMs.toFixed(1)}ms from now`)
       const onId = window.setTimeout(() => {
+        console.log(`[${index}] Playing note ON: ${note.note} at ${performance.now() - playbackStartTime}ms (scheduled: ${delayMs.toFixed(1)}ms)`)
         onPlayNoteOn(note.note, note.velocity)
-      }, note.timestamp)
+      }, delayMs)
       playbackTimeoutsRef.current.push(onId)
+      console.log(`  Scheduled with timeout ID: ${onId}`)
       
       // Note Off
       if (note.duration !== undefined) {
+        const durationMs = ticksToMs(note.duration)
         const offId = window.setTimeout(() => {
+          console.log(`[${index}] Playing note OFF: ${note.note}`)
           onPlayNoteOff(note.note)
-        }, note.timestamp + note.duration)
+        }, delayMs + durationMs)
         playbackTimeoutsRef.current.push(offId)
       }
     })
     
-    // Auto-stop when done
-    const totalDuration = Math.max(...sortedNotes.map(n => n.timestamp + (n.duration || 0)))
+    console.log(`Total ${playbackTimeoutsRef.current.length} timeouts scheduled`)
+    console.log('playbackTimeoutsRef IDs:', playbackTimeoutsRef.current.slice(0, 5))
+    
+    // Auto-stop when done (convert total ticks to ms)
+    const totalTicks = Math.max(...sortedNotes.map(n => n.timestamp + (n.duration || 0)))
+    const totalDuration = ticksToMs(totalTicks)
+    console.log(`Auto-stop scheduled for ${totalTicks} ticks (${totalDuration.toFixed(1)}ms)`)
     const stopId = window.setTimeout(() => {
+      console.log('Auto-stop fired!')
       setIsPlaying(false)
-      metronome.stop()
+      // Clicks are already scheduled as timeouts, no need to stop metronome
       playbackTimeoutsRef.current = []
     }, totalDuration)
     playbackTimeoutsRef.current.push(stopId)
-  }, [recordedNotes, onPlayNoteOn, onPlayNoteOff, metronome])
+    console.log(`Including stop timeout, total: ${playbackTimeoutsRef.current.length}`)
+  }, [recordedNotes, onPlayNoteOn, onPlayNoteOff, onEnsureAudioReady, metronome])
 
   const handleStop = useCallback(() => {
-    // Cancel all scheduled timeouts
+    // Cancel all scheduled timeouts (includes both notes and click events)
     playbackTimeoutsRef.current.forEach(id => window.clearTimeout(id))
     playbackTimeoutsRef.current = []
     
     setIsPlaying(false)
-    metronome.stop()
-  }, [metronome])
+    // No need to stop metronome - clicks are scheduled as timeouts
+  }, [])
 
-  const handleSeek = useCallback((timeMs: number) => {
+  const handleSeek = useCallback(async (timeTicks: number) => {
     if (recordedNotes.length === 0 || !onPlayNoteOn || !onPlayNoteOff) return
+    
+    // Ensure synth audio context is ready
+    if (onEnsureAudioReady) {
+      await onEnsureAudioReady()
+    }
     
     // Cancel any previous playback timeouts
     playbackTimeoutsRef.current.forEach(id => window.clearTimeout(id))
@@ -312,56 +418,91 @@ export const Recorder = forwardRef<RecorderHandle, Props>((props, ref) => {
     // Stop current playback if playing
     if (isPlaying) {
       setIsPlaying(false)
-      metronome.stop()
     }
     
     // Start playback from the seeked position
     setIsPlaying(true)
-    
-    // Start metronome if enabled
-    if (metronome.isEnabled) {
-      metronome.start()
-    }
+    setSeekPosition(timeTicks) // Update seek position
+    setPlayheadKey(prev => prev + 1) // Reset animation from new position
     
     // Sort notes by timestamp
     const sortedNotes = [...recordedNotes].sort((a, b) => a.timestamp - b.timestamp)
     
+    // Convert ticks to ms for scheduling
+    const msPerQuarter = 60000 / metronome.bpm
+    const ticksToMs = (ticks: number) => (ticks * msPerQuarter) / TICKS_PER_QUARTER
+    
+    // Generate metronome click events from seek position if enabled
+    if (metronome.isEnabled) {
+      const maxTicks = Math.max(...sortedNotes.map(n => n.timestamp + (n.duration || 0)))
+      // Find the first beat at or after the seek position
+      const firstBeatIndex = Math.floor(timeTicks / TICKS_PER_QUARTER)
+      const lastBeatIndex = Math.ceil(maxTicks / TICKS_PER_QUARTER) + 1
+      
+      // Create click events from seek position onwards
+      for (let i = firstBeatIndex; i <= lastBeatIndex; i++) {
+        const beatTicks = i * TICKS_PER_QUARTER
+        const adjustedTicks = beatTicks - timeTicks
+        if (adjustedTicks >= 0) {
+          const beatMs = ticksToMs(adjustedTicks)
+          const isDownbeat = i % 4 === 0
+          
+          const clickId = window.setTimeout(() => {
+            if (onPlayNoteOn && onPlayNoteOff) {
+              const clickNote = isDownbeat ? 108 : 107
+              const clickVelocity = isDownbeat ? 100 : 60
+              onPlayNoteOn(clickNote, clickVelocity)
+              setTimeout(() => onPlayNoteOff(clickNote), 50)
+            }
+          }, beatMs)
+          playbackTimeoutsRef.current.push(clickId)
+        }
+      }
+    }
+    
     // Filter notes that start after the seek time
-    const futureNotes = sortedNotes.filter(n => n.timestamp >= timeMs)
+    const futureNotes = sortedNotes.filter(n => n.timestamp >= timeTicks)
     
     // Schedule future note events (adjusted for seek position)
     futureNotes.forEach((note) => {
-      const adjustedTime = note.timestamp - timeMs
+      const adjustedTicks = note.timestamp - timeTicks
+      const adjustedMs = ticksToMs(adjustedTicks)
       
       // Note On
       const onId = window.setTimeout(() => {
         onPlayNoteOn(note.note, note.velocity)
-      }, adjustedTime)
+      }, adjustedMs)
       playbackTimeoutsRef.current.push(onId)
       
       // Note Off
       if (note.duration !== undefined) {
+        const durationMs = ticksToMs(note.duration)
         const offId = window.setTimeout(() => {
           onPlayNoteOff(note.note)
-        }, adjustedTime + note.duration)
+        }, adjustedMs + durationMs)
         playbackTimeoutsRef.current.push(offId)
       }
     })
     
     // Auto-stop when done
-    const totalDuration = Math.max(...sortedNotes.map(n => n.timestamp + (n.duration || 0))) - timeMs
-    if (totalDuration > 0) {
+    const totalTicks = Math.max(...sortedNotes.map(n => n.timestamp + (n.duration || 0))) - timeTicks
+    if (totalTicks > 0) {
+      const totalDuration = ticksToMs(totalTicks)
       const stopId = window.setTimeout(() => {
         setIsPlaying(false)
-        metronome.stop()
         playbackTimeoutsRef.current = []
       }, totalDuration)
       playbackTimeoutsRef.current.push(stopId)
     }
-  }, [recordedNotes, onPlayNoteOn, onPlayNoteOff, isPlaying, metronome])
+  }, [recordedNotes, onPlayNoteOn, onPlayNoteOff, onEnsureAudioReady, isPlaying, metronome])
 
   const handleExport = useCallback(() => {
     if (recordedNotes.length === 0) return
+    
+    console.log('Exporting', recordedNotes.length, 'notes')
+    console.log('First note:', recordedNotes[0])
+    console.log('Recording BPM:', recordingBpmRef.current)
+    console.log('Current BPM:', metronome.bpm)
     
     // Create a simple MIDI file format 0 (single track)
     // This is a basic implementation - could be enhanced with a proper MIDI library
@@ -372,29 +513,75 @@ export const Recorder = forwardRef<RecorderHandle, Props>((props, ref) => {
     
     const events: number[] = []
     
-    // Tempo: 120 BPM = 500000 microseconds per quarter note
-    // Meta event: FF 51 03 [tempo bytes]
-    events.push(0x00, 0xFF, 0x51, 0x03, 0x07, 0xA1, 0x20) // Delta time 0, set tempo
+    // Calculate tempo from the BPM that was used during recording
+    // microseconds per quarter note = 60,000,000 / BPM
+    const microsecondsPerQuarter = Math.round(60000000 / recordingBpmRef.current)
+    const tempoBytes = [
+      (microsecondsPerQuarter >> 16) & 0xFF,
+      (microsecondsPerQuarter >> 8) & 0xFF,
+      microsecondsPerQuarter & 0xFF
+    ]
+    
+    // Tempo meta event: FF 51 03 [tempo bytes]
+    events.push(0x00, 0xFF, 0x51, 0x03, ...tempoBytes) // Delta time 0, set tempo
+    
+    console.log('Tempo:', microsecondsPerQuarter, 'microseconds per quarter note')
     
     // Convert recorded notes to MIDI events with delta times
     const sortedNotes = [...recordedNotes].sort((a, b) => a.timestamp - b.timestamp)
     
-    let lastTime = 0
+    // Create separate arrays for note-on and note-off events, then sort them
+    interface MidiEvent {
+      time: number  // absolute time in ticks
+      type: 'on' | 'off'
+      note: number
+      velocity: number
+    }
+    
+    const midiEvents: MidiEvent[] = []
+    
+    console.log('Notes are already in ticks, no conversion needed')
+    
     sortedNotes.forEach((note) => {
-      // Note On event
-      const deltaOn = Math.round((note.timestamp / 1000) * 480) // Convert ms to ticks (480 ppqn)
-      const deltaSinceLastEvent = Math.max(0, deltaOn - lastTime)
-      events.push(...encodeVariableLength(deltaSinceLastEvent))
-      events.push(0x90, note.note, note.velocity) // Note On, channel 0
-      lastTime = deltaOn
+      // Notes are already in ticks!
+      const timeInTicks = note.timestamp
       
-      // Note Off event
+      // Note On
+      midiEvents.push({
+        time: timeInTicks,
+        type: 'on',
+        note: note.note,
+        velocity: note.velocity
+      })
+      
+      // Note Off
       if (note.duration !== undefined) {
-        const deltaOff = Math.round(note.duration / 1000 * 480)
-        events.push(...encodeVariableLength(deltaOff))
-        events.push(0x80, note.note, 0) // Note Off, channel 0
-        lastTime += deltaOff
+        const offTimeInTicks = timeInTicks + note.duration
+        midiEvents.push({
+          time: offTimeInTicks,
+          type: 'off',
+          note: note.note,
+          velocity: 0
+        })
       }
+    })
+    
+    // Sort all events by time
+    midiEvents.sort((a, b) => a.time - b.time)
+    
+    // Write events with proper delta times
+    let lastTime = 0
+    midiEvents.forEach((event) => {
+      const delta = Math.max(0, event.time - lastTime)
+      events.push(...encodeVariableLength(delta))
+      
+      if (event.type === 'on') {
+        events.push(0x90, event.note, event.velocity) // Note On, channel 0
+      } else {
+        events.push(0x80, event.note, 0) // Note Off, channel 0
+      }
+      
+      lastTime = event.time
     })
     
     // End of track
@@ -434,7 +621,7 @@ export const Recorder = forwardRef<RecorderHandle, Props>((props, ref) => {
     a.click()
     document.body.removeChild(a)
     URL.revokeObjectURL(url)
-  }, [recordedNotes])
+  }, [recordedNotes, metronome.bpm])
   
   // Helper function to encode variable-length quantities (MIDI format)
   function encodeVariableLength(value: number): number[] {
@@ -452,9 +639,13 @@ export const Recorder = forwardRef<RecorderHandle, Props>((props, ref) => {
   // TODO: Hook this up to actual MIDI note events from parent
   const recordNoteOn = useCallback((note: number, velocity: number) => {
     if (!isRecording) return
-    const timestamp = performance.now() - startTimeRef.current
+    const elapsedMs = performance.now() - startTimeRef.current
     
-    // Track this note start time
+    // Convert milliseconds to ticks based on recording BPM
+    const msPerQuarter = 60000 / recordingBpmRef.current
+    const timestamp = Math.round((elapsedMs * TICKS_PER_QUARTER) / msPerQuarter)
+    
+    // Track this note start time (in ticks)
     const starts = activeNotesRef.current.get(note) || []
     starts.push(timestamp)
     activeNotesRef.current.set(note, starts)
@@ -466,24 +657,28 @@ export const Recorder = forwardRef<RecorderHandle, Props>((props, ref) => {
   const recordNoteOff = useCallback((note: number) => {
     if (!isRecording) return
     
+    const elapsedMs = performance.now() - startTimeRef.current
+    const msPerQuarter = 60000 / recordingBpmRef.current
+    const currentTicks = Math.round((elapsedMs * TICKS_PER_QUARTER) / msPerQuarter)
+    
     // Find and remove the oldest start time for this note
     const starts = activeNotesRef.current.get(note)
     if (starts && starts.length > 0) {
-      const startTime = starts.shift()! // Remove first (oldest) start time
+      const startTimeTicks = starts.shift()! // Remove first (oldest) start time
       
       if (starts.length === 0) {
         activeNotesRef.current.delete(note)
       }
       
-      const duration = performance.now() - startTimeRef.current - startTime
+      const durationTicks = currentTicks - startTimeTicks
       
       // Find the matching note-on event and add duration
       setRecordedNotes(prev => {
         let found = false
         return prev.map(n => {
-          if (!found && n.note === note && n.timestamp === startTime && !n.duration) {
+          if (!found && n.note === note && n.timestamp === startTimeTicks && !n.duration) {
             found = true
-            return { ...n, duration }
+            return { ...n, duration: durationTicks }
           }
           return n
         })
@@ -795,6 +990,9 @@ export const Recorder = forwardRef<RecorderHandle, Props>((props, ref) => {
             isPlaying={isPlaying}
             zoomLevel={zoomLevel}
             onSeek={handleSeek}
+            bpm={metronome.bpm}
+            playheadKey={playheadKey}
+            seekPosition={seekPosition}
           />
         ) : (
           <div style={{
@@ -826,17 +1024,23 @@ function PianoRollView({
   notes, 
   isPlaying, 
   zoomLevel = 1.0,
-  onSeek 
+  onSeek,
+  bpm = 120,
+  playheadKey = 0,
+  seekPosition = 0
 }: { 
   notes: RecordedNote[]; 
   isPlaying: boolean;
   zoomLevel?: number;
-  onSeek?: (timeMs: number) => void;
+  onSeek?: (timeTicks: number) => void;
+  bpm?: number;
+  playheadKey?: number;
+  seekPosition?: number;
 }) {
   if (notes.length === 0) return null
 
-  // Calculate time range
-  const maxTime = Math.max(...notes.map(n => n.timestamp + (n.duration || 0)))
+  // Calculate time range (notes are in ticks)
+  const maxTicks = Math.max(...notes.map(n => n.timestamp + (n.duration || 0)))
   const minNote = Math.min(...notes.map(n => n.note))
   const maxNote = Math.max(...notes.map(n => n.note))
   
@@ -845,9 +1049,10 @@ function PianoRollView({
   const startNote = Math.max(0, minNote - 2)
   
   // Calculate dimensions with zoom
-  const pixelsPerMs = 0.1 * zoomLevel // Apply zoom to horizontal scale
+  // Display in musical time: pixels per tick
+  const pixelsPerTick = 0.2 * zoomLevel // Adjust this for comfortable viewing
   const noteHeight = 12
-  const rollWidth = Math.max(800, maxTime * pixelsPerMs)
+  const rollWidth = Math.max(800, maxTicks * pixelsPerTick)
   const rollHeight = noteRange * noteHeight
   
   const NOTE_NAMES = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B']
@@ -858,8 +1063,8 @@ function PianoRollView({
     if (!onSeek) return
     const rect = e.currentTarget.getBoundingClientRect()
     const clickX = e.clientX - rect.left + e.currentTarget.scrollLeft - 50 // Account for note labels
-    const timeMs = clickX / pixelsPerMs
-    onSeek(Math.max(0, Math.min(maxTime, timeMs)))
+    const clickTicks = clickX / pixelsPerTick
+    onSeek(Math.max(0, Math.min(maxTicks, clickTicks)))
   }
   
   return (
@@ -909,26 +1114,32 @@ function PianoRollView({
           )
         })}
         
-        {/* Vertical time grid lines (every second) */}
-        {Array.from({ length: Math.ceil(maxTime / 1000) + 1 }, (_, i) => (
-          <div
-            key={`time-${i}`}
-            style={{
-              position: 'absolute',
-              left: 50 + i * 1000 * pixelsPerMs,
-              top: 0,
-              width: 1,
-              height: rollHeight,
-              background: i % 4 === 0 ? '#bbb' : '#ddd',
-            }}
-          />
-        ))}
+        {/* Vertical beat grid lines (synced with BPM) */}
+        {(() => {
+          // Beat grid in ticks: 480 ticks per quarter note
+          const ticksPerBeat = TICKS_PER_QUARTER
+          const numBeats = Math.ceil(maxTicks / ticksPerBeat) + 1
+          
+          return Array.from({ length: numBeats }, (_, i) => (
+            <div
+              key={`beat-${i}`}
+              style={{
+                position: 'absolute',
+                left: 50 + i * ticksPerBeat * pixelsPerTick,
+                top: 0,
+                width: i % 4 === 0 ? 2 : 1, // Thicker lines for downbeats (every bar)
+                height: rollHeight,
+                background: i % 4 === 0 ? '#999' : '#ccc', // Darker for downbeats
+              }}
+            />
+          ))
+        })()}
         
         {/* Notes */}
         {notes.map((note, i) => {
           const y = (startNote + noteRange - 1 - note.note) * noteHeight
-          const x = 50 + note.timestamp * pixelsPerMs
-          const width = (note.duration || 100) * pixelsPerMs
+          const x = 50 + note.timestamp * pixelsPerTick
+          const width = (note.duration || TICKS_PER_QUARTER / 4) * pixelsPerTick // Default to 16th note if no duration
           const alpha = 0.3 + (note.velocity / 127) * 0.7 // 0.3 to 1.0
           
           return (
@@ -951,23 +1162,35 @@ function PianoRollView({
         })}
         
         {/* Playback cursor */}
-        {isPlaying && (
-          <div style={{
-            position: 'absolute',
-            left: 50,
-            top: 0,
-            width: 2,
-            height: rollHeight,
-            background: 'var(--accent-2)',
-            animation: `playhead ${maxTime}ms linear`,
-          }} />
-        )}
+        {isPlaying && (() => {
+          // Calculate total duration in milliseconds based on BPM
+          const msPerQuarter = 60000 / (bpm || 120)
+          const remainingTicks = maxTicks - seekPosition
+          const remainingMs = (remainingTicks * msPerQuarter) / TICKS_PER_QUARTER
+          const startPixels = seekPosition * pixelsPerTick
+          const totalPixels = maxTicks * pixelsPerTick
+          
+          return (
+            <div 
+              key={playheadKey} // Force re-render to restart animation
+              style={{
+                position: 'absolute',
+                left: 50 + startPixels, // Start at seek position
+                top: 0,
+                width: 2,
+                height: rollHeight,
+                background: 'var(--accent-2)',
+                animation: `playhead-${playheadKey} ${remainingMs}ms linear`,
+              }} 
+            />
+          )
+        })()}
       </div>
       
       <style>{`
-        @keyframes playhead {
+        @keyframes playhead-${playheadKey} {
           from { transform: translateX(0); }
-          to { transform: translateX(${maxTime * pixelsPerMs}px); }
+          to { transform: translateX(${(maxTicks - seekPosition) * pixelsPerTick}px); }
         }
       `}</style>
     </div>

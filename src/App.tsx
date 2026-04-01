@@ -37,7 +37,7 @@ export default function App() {
     status, loadProgress, errorMsg, fonts,
     loadFont, removeFont,
     applyZone, noteOn, noteOff, sendCC, sendPitchBend,
-    allNotesOff, firstMelodicPreset,
+    allNotesOff, ensureAudioReady, firstMelodicPreset,
   } = useSynth()
 
   // Once a font loads, create default zone if none exist
@@ -97,6 +97,8 @@ export default function App() {
 
   // MIDI handlers
   const handleNoteOn = useCallback((note: number, velocity: number) => {
+    console.log('handleNoteOn called:', note, velocity)
+    
     // Check if we're in learning mode
     if (learningMode) {
       const { zoneId, field } = learningMode
@@ -113,11 +115,15 @@ export default function App() {
     }
     
     const matching = zones.filter((z) => note >= z.minNote && note <= z.maxNote)
-    matching.forEach((z) => noteOn(z, note, velocity))
+    console.log('Matching zones:', matching.length, 'zones:', zones.length, 'status:', status)
+    matching.forEach((z) => {
+      console.log('Playing note on zone:', z.name, 'channel:', z.channel)
+      noteOn(z, note, velocity)
+    })
     if (matching.length > 0) setActiveNotes((prev) => new Set([...prev, note]))
     // Record if recorder is active
     recorderRef.current?.recordNoteOn(note, velocity)
-  }, [zones, noteOn, learningMode])
+  }, [zones, noteOn, learningMode, status])
 
   const handleNoteOff = useCallback((note: number) => {
     // Don't play notes when in learning mode
@@ -450,6 +456,7 @@ export default function App() {
           ref={recorderRef}
           onPlayNoteOn={handleNoteOn}
           onPlayNoteOff={handleNoteOff}
+          onEnsureAudioReady={ensureAudioReady}
         />
       </div>
     </div>

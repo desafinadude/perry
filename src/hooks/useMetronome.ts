@@ -24,6 +24,12 @@ export function useMetronome() {
   // Play metronome click sound
   const playClick = useCallback((time: number, isDownbeat: boolean) => {
     const ctx = ensureAudioContext()
+    
+    // Log for debugging
+    if (ctx.state !== 'running') {
+      console.warn('AudioContext not running, state:', ctx.state)
+    }
+    
     const osc = ctx.createOscillator()
     const gain = ctx.createGain()
     
@@ -65,19 +71,24 @@ export function useMetronome() {
   }, [bpm, isEnabled, playClick])
 
   // Start/stop playback
-  const start = useCallback((startTime?: number) => {
+  const start = useCallback(async (offsetBeats: number = 0) => {
     const ctx = ensureAudioContext()
     if (ctx.state === 'suspended') {
-      ctx.resume()
+      console.log('Resuming suspended AudioContext...')
+      await ctx.resume()
+      console.log('AudioContext resumed, state:', ctx.state)
     }
     
     // Store timing references for sync
     startTimeRef.current = ctx.currentTime
     performanceStartRef.current = performance.now()
-    beatCountRef.current = 0
+    beatCountRef.current = offsetBeats // Start from the offset beat
     
-    nextBeatTimeRef.current = startTime ?? ctx.currentTime
+    // Start from current audio context time
+    nextBeatTimeRef.current = ctx.currentTime
     setIsPlaying(true)
+    
+    console.log('Metronome scheduler starting at', ctx.currentTime, 'beat offset:', offsetBeats)
     
     // Schedule every 25ms
     schedulerIdRef.current = window.setInterval(scheduler, 25)

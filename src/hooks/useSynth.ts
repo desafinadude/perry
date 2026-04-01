@@ -163,10 +163,18 @@ export function useSynth() {
 
   const noteOn = useCallback((zone: Zone, note: number, velocity: number) => {
     const synth = synthMapRef.current.get(zone.fontId)
-    if (!synth) return
+    if (!synth) {
+      console.warn('No synth found for fontId:', zone.fontId)
+      return
+    }
     const ctx = audioCtxRef.current
+    console.log('noteOn - AudioContext state:', ctx?.state)
     if (ctx?.state !== 'running') {
-      ctx?.resume().then(() => synth.noteOn(zone.channel, note, velocity))
+      console.log('Resuming AudioContext...')
+      ctx?.resume().then(() => {
+        console.log('AudioContext resumed, playing note')
+        synth.noteOn(zone.channel, note, velocity)
+      })
     } else {
       synth.noteOn(zone.channel, note, velocity)
     }
@@ -203,11 +211,28 @@ export function useSynth() {
     })
   }, [])
 
+  // Ensure audio context is running (call before playback)
+  const ensureAudioReady = useCallback(async () => {
+    const ctx = audioCtxRef.current
+    if (!ctx) {
+      console.warn('No AudioContext exists yet')
+      return
+    }
+    if (ctx.state === 'suspended') {
+      console.log('Synth AudioContext suspended, resuming...')
+      await ctx.resume()
+      console.log('Synth AudioContext resumed, state:', ctx.state)
+    } else {
+      console.log('Synth AudioContext already running')
+    }
+  }, [])
+
   return {
     status, loadProgress, errorMsg, fonts,
     loadFont, removeFont,
     applyZone, noteOn, noteOff, sendCC, sendPitchBend,
     allNotesOff,
+    ensureAudioReady,
     firstMelodicPreset,
   }
 }
