@@ -41,9 +41,11 @@ interface Props {
   zones: Zone[]
   activeNotes: Set<number>
   height?: number // height in pixels, defaults to auto-calculated
+  onNoteClick?: (note: number) => void
+  learningNote?: number | null // highlight this note when in learning mode
 }
 
-export function Piano({ zones, activeNotes, height }: Props) {
+export function Piano({ zones, activeNotes, height, onNoteClick, learningNote }: Props) {
   const containerRef = useRef<HTMLDivElement>(null)
   const [width, setWidth] = useState(0)
 
@@ -65,22 +67,28 @@ export function Piano({ zones, activeNotes, height }: Props) {
         {keys.map(({ midi, isBlack, left, width: kw }) => {
           const color = zoneColor(midi, zones)
           const active = activeNotes.has(midi)
+          const isLearning = learningNote === midi
           const isC = midi % 12 === 0
 
           if (!isBlack) {
             return (
-              <div key={midi} title={noteName(midi)} style={{
-                position: 'absolute', left, top: 0,
-                width: kw - 1, height: wh,
-                background: active ? '#ddd' : '#fff',
-                borderRight: '1px solid var(--border)',
-                borderBottom: `2px solid ${color ?? 'var(--border)'}`,
-                display: 'flex', flexDirection: 'column',
-                alignItems: 'center', justifyContent: 'flex-end',
-                paddingBottom: 6,
-                zIndex: 1,
-                transition: 'background 80ms ease-out',
-              }}>
+              <div 
+                key={midi} 
+                title={noteName(midi)} 
+                onClick={() => onNoteClick?.(midi)}
+                style={{
+                  position: 'absolute', left, top: 0,
+                  width: kw - 1, height: wh,
+                  background: isLearning ? '#fbbf24' : active ? '#ddd' : '#fff',
+                  borderRight: '1px solid var(--border)',
+                  borderBottom: `2px solid ${color ?? 'var(--border)'}`,
+                  display: 'flex', flexDirection: 'column',
+                  alignItems: 'center', justifyContent: 'flex-end',
+                  paddingBottom: 6,
+                  zIndex: 1,
+                  transition: 'background 80ms ease-out',
+                  cursor: onNoteClick ? 'pointer' : 'default',
+                }}>
                 {isC && (
                   <span style={{
                     fontFamily: 'var(--font-mono)', fontSize: 9,
@@ -95,14 +103,20 @@ export function Piano({ zones, activeNotes, height }: Props) {
             )
           } else {
             return (
-              <div key={midi} title={noteName(midi)} style={{
-                position: 'absolute', left, top: 0,
-                width: kw, height: bh,
-                background: active ? (color ?? '#444') : 'var(--ink)',
-                borderBottom: color ? `4px solid ${color}` : undefined,
-                zIndex: 2,
-                transition: 'background 80ms ease-out',
-              }} />
+              <div 
+                key={midi} 
+                title={noteName(midi)} 
+                onClick={() => onNoteClick?.(midi)}
+                style={{
+                  position: 'absolute', left, top: 0,
+                  width: kw, height: bh,
+                  background: isLearning ? '#fbbf24' : active ? (color ?? '#444') : 'var(--ink)',
+                  borderBottom: color ? `4px solid ${color}` : undefined,
+                  zIndex: 2,
+                  transition: 'background 80ms ease-out',
+                  cursor: onNoteClick ? 'pointer' : 'default',
+                }} 
+              />
             )
           }
         })}

@@ -28,12 +28,14 @@ export default function App() {
   const [savedConfigs, setSavedConfigs] = useState<SavedConfig[]>(getSavedConfigs)
   const [saveInput, setSaveInput] = useState('')
   const [showSaved, setShowSaved] = useState(false)
+  const [recorderHeight, setRecorderHeight] = useState(240) // pixels
+  const [learningMode, setLearningMode] = useState<{ zoneId: string; field: 'minNote' | 'maxNote' } | null>(null)
   
   const recorderRef = useRef<RecorderHandle>(null)
 
   const {
     status, loadProgress, errorMsg, fonts,
-    init, loadFont, removeFont,
+    loadFont, removeFont,
     applyZone, noteOn, noteOff, sendCC, sendPitchBend,
     allNotesOff, firstMelodicPreset,
   } = useSynth()
@@ -47,8 +49,7 @@ export default function App() {
         program: first?.program ?? 0,
       })])
     }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [fonts])
+  }, [fonts, zones.length, firstMelodicPreset])
 
   // presets keyed by fontId, for ZoneEditor
   const presetsByFont = useMemo<Record<string, Preset[]>>(() => {
@@ -96,19 +97,37 @@ export default function App() {
 
   // MIDI handlers
   const handleNoteOn = useCallback((note: number, velocity: number) => {
+    // Check if we're in learning mode
+    if (learningMode) {
+      const { zoneId, field } = learningMode
+      const zone = zones.find(z => z.id === zoneId)
+      if (zone) {
+        if (field === 'minNote') {
+          setZones((prev) => prev.map((z) => z.id === zoneId ? { ...z, minNote: Math.min(note, zone.maxNote) } : z))
+        } else {
+          setZones((prev) => prev.map((z) => z.id === zoneId ? { ...z, maxNote: Math.max(note, zone.minNote) } : z))
+        }
+      }
+      setLearningMode(null)
+      return
+    }
+    
     const matching = zones.filter((z) => note >= z.minNote && note <= z.maxNote)
     matching.forEach((z) => noteOn(z, note, velocity))
     if (matching.length > 0) setActiveNotes((prev) => new Set([...prev, note]))
     // Record if recorder is active
     recorderRef.current?.recordNoteOn(note, velocity)
-  }, [zones, noteOn])
+  }, [zones, noteOn, learningMode])
 
   const handleNoteOff = useCallback((note: number) => {
+    // Don't play notes when in learning mode
+    if (learningMode) return
+    
     zones.filter((z) => note >= z.minNote && note <= z.maxNote).forEach((z) => noteOff(z, note))
     setActiveNotes((prev) => { const s = new Set(prev); s.delete(note); return s })
     // Record if recorder is active
     recorderRef.current?.recordNoteOff(note)
-  }, [zones, noteOff])
+  }, [zones, noteOff, learningMode])
 
   const handleCC = useCallback((cc: number, value: number) => {
     sendCC(zones, cc, value)
@@ -193,6 +212,12 @@ export default function App() {
 
   const handleDelete = useCallback((id: string) => setSavedConfigs(deleteConfig(id)), [])
 
+  const handlePianoClick = useCallback((note: number) => {
+    if (learningMode) {
+      handleNoteOn(note, 100) // Trigger with default velocity
+    }
+  }, [learningMode, handleNoteOn])
+
   return (
     <div style={{ height: '100vh', display: 'flex', flexDirection: 'column', background: 'var(--bg)', overflow: 'hidden' }}>
 
@@ -218,9 +243,6 @@ export default function App() {
 
         {/* SF status */}
         <div style={{ display: 'flex', flexDirection: 'column', justifyContent: 'center', padding: '0 20px', borderRight: '1px solid #2a2a2a', minWidth: 200 }}>
-          {status === 'idle' && (
-            <button onClick={init} style={primaryBtn}>INITIALIZE SYNTH</button>
-          )}
           {status === 'loading' && (
             <div>
               <div style={{ width: 140, height: 2, background: '#333', marginBottom: 6 }}>
@@ -297,7 +319,13 @@ export default function App() {
       </header>
 
       {/* ━━━ PIANO ━━━ */}
-      <Piano zones={zones} activeNotes={activeNotes} height={60} />
+      <Piano 
+        zones={zones} 
+        activeNotes={activeNotes} 
+        height={60}
+        onNoteClick={learningMode ? handlePianoClick : undefined}
+        learningNote={learningMode ? null : null}
+      />
 
       {/* ━━━ ZONES ━━━ */}
       <div style={{ flex: 1, display: 'flex', flexDirection: 'column', minHeight: 0, overflow: 'hidden' }}>
@@ -374,13 +402,55 @@ export default function App() {
             onAdd={handleAddZone}
             onRemove={handleRemoveZone}
             onLoadFont={handleLoadFontForZone}
+            learningMode={learningMode}
+            onSetLearningMode={setLearningMode}
           />
         </div>
       </div>
 
+      {/* ━━━ RESIZE HANDLE ━━━ */}
+      <div
+        onMouseDown={(e) => {
+          e.preventDefault()
+          const startY = e.clientY
+          const startHeight = recorderHeight
+          
+          const handleMouseMove = (moveEvent: MouseEvent) => {
+            const deltaY = startY - moveEvent.clientY // Inverted: drag up = bigger recorder
+            const newHeight = Math.max(150, Math.min(600, startHeight + deltaY))
+            setRecorderHeight(newHeight)
+          }
+          
+          const handleMouseUp = () => {
+            document.removeEventListener('mousemove', handleMouseMove)
+            document.removeEventListener('mouseup', handleMouseUp)
+          }
+          
+          document.addEventListener('mousemove', handleMouseMove)
+          document.addEventListener('mouseup', handleMouseUp)
+        }}
+        style={{
+          height: 8,
+          background: 'var(--surface)',
+          borderTop: '1px solid var(--border)',
+          borderBottom: '1px solid var(--border)',
+          cursor: 'ns-resize',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          flexShrink: 0,
+        }}
+      >
+        <div style={{ width: 40, height: 2, background: 'var(--border)', borderRadius: 1 }} />
+      </div>
+
       {/* ━━━ RECORDER ━━━ */}
-      <div style={{ height: 240, flexShrink: 0, borderTop: '2px solid var(--ink)', overflow: 'hidden' }}>
-        <Recorder ref={recorderRef} />
+      <div style={{ height: recorderHeight, flexShrink: 0, overflow: 'hidden' }}>
+        <Recorder 
+          ref={recorderRef}
+          onPlayNoteOn={handleNoteOn}
+          onPlayNoteOff={handleNoteOff}
+        />
       </div>
     </div>
   )

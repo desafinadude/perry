@@ -9,15 +9,11 @@ interface Props {
   onAdd: () => void
   onRemove: (id: string) => void
   onLoadFont: (fontId: string) => void  // triggers file picker for that font slot
+  learningMode: { zoneId: string; field: 'minNote' | 'maxNote' } | null
+  onSetLearningMode: (mode: { zoneId: string; field: 'minNote' | 'maxNote' } | null) => void
 }
 
-function NoteSelect({ value, onChange }: { value: number; onChange: (v: number) => void }) {
-  const opts: JSX.Element[] = []
-  for (let n = PIANO_MIN; n <= PIANO_MAX; n++) opts.push(<option key={n} value={n}>{noteName(n)}</option>)
-  return <select value={value} onChange={(e) => onChange(Number(e.target.value))} style={sel}>{opts}</select>
-}
-
-export function ZoneEditor({ zones, fonts, presetsByFont, onChange, onAdd, onRemove, onLoadFont }: Props) {
+export function ZoneEditor({ zones, fonts, presetsByFont, onChange, onAdd, onRemove, onLoadFont, learningMode, onSetLearningMode }: Props) {
   return (
     <div>
       {zones.map((zone) => {
@@ -71,10 +67,29 @@ export function ZoneEditor({ zones, fonts, presetsByFont, onChange, onAdd, onRem
 
             {/* Note range */}
             <div style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '0 12px', borderRight: '1px solid var(--border)', alignSelf: 'stretch' }}>
-              <span style={lbl}>FROM</span>
-              <NoteSelect value={zone.minNote} onChange={(v) => onChange({ ...zone, minNote: Math.min(v, zone.maxNote) })} />
+              <button
+                onClick={() => onSetLearningMode({ zoneId: zone.id, field: 'minNote' })}
+                style={{
+                  ...learnBtn,
+                  background: learningMode?.zoneId === zone.id && learningMode?.field === 'minNote' ? '#fbbf24' : 'transparent',
+                  color: learningMode?.zoneId === zone.id && learningMode?.field === 'minNote' ? '#000' : 'var(--ink)',
+                }}
+                title="Click, then play a MIDI note or click piano key"
+              >
+                FROM {noteName(zone.minNote)}
+              </button>
               <span style={{ color: 'var(--muted)' }}>—</span>
-              <NoteSelect value={zone.maxNote} onChange={(v) => onChange({ ...zone, maxNote: Math.max(v, zone.minNote) })} />
+              <button
+                onClick={() => onSetLearningMode({ zoneId: zone.id, field: 'maxNote' })}
+                style={{
+                  ...learnBtn,
+                  background: learningMode?.zoneId === zone.id && learningMode?.field === 'maxNote' ? '#fbbf24' : 'transparent',
+                  color: learningMode?.zoneId === zone.id && learningMode?.field === 'maxNote' ? '#000' : 'var(--ink)',
+                }}
+                title="Click, then play a MIDI note or click piano key"
+              >
+                TO {noteName(zone.maxNote)}
+              </button>
             </div>
 
             {/* Preset */}
@@ -150,6 +165,12 @@ const inp: React.CSSProperties = {
 const lbl: React.CSSProperties = {
   fontFamily: 'var(--font-mono)', fontSize: 10, letterSpacing: '0.15em',
   color: 'var(--muted)', userSelect: 'none', whiteSpace: 'nowrap',
+}
+const learnBtn: React.CSSProperties = {
+  background: 'transparent', border: '1.5px solid var(--ink)', borderRadius: 0,
+  color: 'var(--ink)', cursor: 'pointer', fontFamily: 'var(--font-mono)',
+  fontSize: 10, letterSpacing: '0.12em', padding: '5px 10px', fontWeight: 600,
+  transition: 'all 0.15s',
 }
 const iconBtn: React.CSSProperties = {
   background: 'transparent', border: '1px solid var(--border)', borderRadius: 0,

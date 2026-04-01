@@ -1,4 +1,4 @@
-import { useState, useRef, useCallback } from 'react'
+import { useState, useRef, useCallback, useEffect } from 'react'
 import type { Preset, LoadedFont, Zone } from '../types'
 
 type InitStatus = 'idle' | 'loading' | 'ready' | 'error'
@@ -21,10 +21,11 @@ function firstMelodicPreset(presets: Preset[]) {
 }
 
 export function useSynth() {
-  const [status, setStatus] = useState<InitStatus>('idle')
+  const [status, setStatus] = useState<InitStatus>('loading')
   const [loadProgress, setLoadProgress] = useState(0)
   const [errorMsg, setErrorMsg] = useState('')
   const [fonts, setFonts] = useState<LoadedFont[]>([])
+  const [isLoadingDefault, setIsLoadingDefault] = useState(false)
 
   const audioCtxRef = useRef<AudioContext | null>(null)
   // Map fontId → WorkletSynthesizer instance
@@ -85,13 +86,6 @@ export function useSynth() {
     return { id: fontId, name: fontName, presets }
   }, [ensureAudio, ensureWorklet])
 
-  // ── Initial load (no default font) ──────────────────────────────────────────
-  const init = useCallback(async () => {
-    if (status === 'loading' || status === 'ready') return
-    setStatus('ready')
-    await ensureAudio()
-  }, [status, ensureAudio])
-
   // ── Load an additional / replacement font ────────────────────────────────────
   const loadFont = useCallback(async (
     buffer: ArrayBuffer,
@@ -107,11 +101,14 @@ export function useSynth() {
     }
 
     const font = await createFontSynth(buffer, fontId, name)
-    setFonts((prev) =>
-      replaceId
-        ? prev.map((f) => f.id === replaceId ? font : f)
-        : [...prev, font],
-    )
+    setFonts((prev) => {
+      const newFonts = replaceId
+        ? prev.some(f => f.id === replaceId)
+          ? prev.map((f) => f.id === replaceId ? font : f)  // Replace existing
+          : [...prev, font]  // Add if not found
+        : [...prev, font]  // Add new
+      return newFonts
+    })
     return fontId
   }, [createFontSynth])
 
@@ -120,6 +117,38 @@ export function useSynth() {
     try { synthMapRef.current.get(fontId)?.destroy?.() } catch {}
     synthMapRef.current.delete(fontId)
     setFonts((prev) => prev.filter((f) => f.id !== fontId))
+  }, [])
+
+  // ── Load default font on mount ──────────────────────────────────────────────
+  useEffect(() => {
+    if (isLoadingDefault) return
+    
+    setIsLoadingDefault(true)
+    setStatus('loading')
+    setLoadProgress(0)
+    
+    fetch('/sf2/default.sf2')
+      .then(res => {
+        if (!res.ok) throw new Error(`HTTP ${res.status}: ${res.statusText}`)
+        return res.arrayBuffer()
+      })
+      .then(buffer => {
+        setLoadProgress(50)
+        return loadFont(buffer, 'default.sf2', 'main')
+      })
+      .then(() => {
+        setStatus('ready')
+        setLoadProgress(100)
+      })
+      .catch(err => {
+        console.error('Failed to load default font:', err)
+        setErrorMsg(`Failed to load default font: ${err.message}`)
+        setStatus('error')
+      })
+      .finally(() => {
+        setIsLoadingDefault(false)
+      })
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
   // ── Zone operations ─────────────────────────────────────────────────────────
@@ -176,7 +205,7 @@ export function useSynth() {
 
   return {
     status, loadProgress, errorMsg, fonts,
-    init, loadFont, removeFont,
+    loadFont, removeFont,
     applyZone, noteOn, noteOff, sendCC, sendPitchBend,
     allNotesOff,
     firstMelodicPreset,
