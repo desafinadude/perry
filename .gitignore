@@ -1,3 +1,4 @@
 dist
 node_modules
 *.sf2
+src-tauri/
