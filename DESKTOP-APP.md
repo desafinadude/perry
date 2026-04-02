@@ -2,6 +2,33 @@
 
 This branch contains the Tauri-based standalone desktop application version of Perry.
 
+## Known Issues
+
+### MIDI Support on Linux
+Unfortunately, the Linux webview (webkit2gtk) does not support the Web MIDI API. There are two options:
+
+**Option 1: Use the web version for MIDI**
+Run Perry in Chrome/Chromium which has full Web MIDI support:
+```bash
+npm run dev
+# Open http://localhost:5173 in Chrome
+```
+
+**Option 2: Use the desktop app for playback only**
+The desktop app works great for:
+- Loading and playing back MIDI files
+- Using the piano roll
+- The metronome and zone editor
+- Everything except live MIDI input from controllers
+
+### Workaround for MIDI
+If you need MIDI input in the desktop app, you would need to implement a Tauri plugin that bridges native MIDI to the app. This is a more advanced feature that could be added later.
+
+## Icon
+The app should use your favicon as the icon. If you see a generic icon:
+- On Linux, the icon is embedded in the binary but may take a system restart or cache clear to appear
+- When you build a release bundle (`npm run tauri:build`), the icon will be properly included in installers
+
 ## Prerequisites
 
 You need to have Rust installed. Install it from [rustup.rs](https://rustup.rs/)

@@ -20,8 +20,10 @@
       }
     ],
     "security": {
-      "csp": null
-    }
+      "csp": "default-src 'self' 'unsafe-inline' 'unsafe-eval' data: blob:; midi-src *",
+      "dangerousDisableAssetCspModification": false
+    },
+    "withGlobalTauri": true
   },
   "bundle": {
     "active": true,
