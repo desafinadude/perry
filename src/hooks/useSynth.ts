@@ -35,9 +35,23 @@ export function useSynth() {
   // ── Audio context / worklet bootstrap ──────────────────────────────────────
   const ensureAudio = useCallback(async () => {
     if (audioCtxRef.current) return audioCtxRef.current
-    const ctx = new AudioContext()
+    
+    // Create AudioContext with low latency settings
+    const ctx = new AudioContext({
+      latencyHint: 'interactive', // Optimize for low latency over power consumption
+      sampleRate: 44100, // Standard sample rate, good balance
+    })
+    
     audioCtxRef.current = ctx
     await ctx.resume()
+    
+    // Log actual latency for debugging
+    console.log('AudioContext latency:', {
+      baseLatency: ctx.baseLatency,
+      outputLatency: ctx.outputLatency,
+      sampleRate: ctx.sampleRate,
+    })
+    
     return ctx
   }, [])
 
@@ -59,7 +73,12 @@ export function useSynth() {
     await ensureWorklet(ctx)
 
     const synth = new WorkletSynthesizer(ctx)
-    synth.connect(ctx.destination)
+    
+    // Add gain stage for punchier sound
+    const gainNode = ctx.createGain()
+    gainNode.gain.value = 1.2 // Slight boost for more presence
+    synth.connect(gainNode)
+    gainNode.connect(ctx.destination)
 
     let resolvedPresets: Preset[] = []
     const presetsReady = new Promise<Preset[]>((resolve) => {
