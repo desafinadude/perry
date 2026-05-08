@@ -2,6 +2,7 @@ import { useState, useCallback, useEffect, useRef, useMemo } from 'react'
 import { Piano } from './components/Piano'
 import { ZoneEditor } from './components/ZoneEditor'
 import { Recorder, RecorderHandle } from './components/Recorder'
+import { SheetPlayer, SheetPlayerHandle } from './components/SheetPlayer'
 import { useSynth } from './hooks/useSynth'
 import { useMidi } from './hooks/useMidi'
 import type { Zone, Preset, SavedConfig } from './types'
@@ -28,10 +29,12 @@ export default function App() {
   const [savedConfigs, setSavedConfigs] = useState<SavedConfig[]>(getSavedConfigs)
   const [saveInput, setSaveInput] = useState('')
   const [showSaved, setShowSaved] = useState(false)
-  const [recorderHeight, setRecorderHeight] = useState(240) // pixels
+  const [recorderHeight, setRecorderHeight] = useState(240)
   const [learningMode, setLearningMode] = useState<{ zoneId: string; field: 'minNote' | 'maxNote' } | null>(null)
-  
+  const [activeTab, setActiveTab] = useState<'zones' | 'sheet'>('zones')
+
   const recorderRef = useRef<RecorderHandle>(null)
+  const sheetPlayerRef = useRef<SheetPlayerHandle>(null)
 
   const {
     status, loadProgress, errorMsg, fonts,
@@ -98,6 +101,9 @@ export default function App() {
   // MIDI handlers
   const handleNoteOn = useCallback((note: number, velocity: number) => {
     console.log('handleNoteOn called:', note, velocity)
+
+    // Always feed sheet player (it only acts when match mode is on)
+    sheetPlayerRef.current?.onMidiNoteOn(note)
     
     // Check if we're in learning mode
     if (learningMode) {
@@ -126,6 +132,9 @@ export default function App() {
   }, [zones, noteOn, learningMode, status])
 
   const handleNoteOff = useCallback((note: number) => {
+    // Feed sheet player
+    sheetPlayerRef.current?.onMidiNoteOff(note)
+    
     // Don't play notes when in learning mode
     if (learningMode) return
     
@@ -247,6 +256,22 @@ export default function App() {
           </div>
         </div>
 
+        {/* Mode tabs */}
+        <div className="mode-tabs">
+          <button
+            className={`mode-tab${activeTab === 'zones' ? ' active' : ''}`}
+            onClick={() => setActiveTab('zones')}
+          >
+            ZONES
+          </button>
+          <button
+            className={`mode-tab${activeTab === 'sheet' ? ' active' : ''}`}
+            onClick={() => setActiveTab('sheet')}
+          >
+            ♪ SHEET
+          </button>
+        </div>
+
         {/* SF status */}
         <div style={{ display: 'flex', flexDirection: 'column', justifyContent: 'center', padding: '0 20px', borderRight: '1px solid #2a2a2a', minWidth: 200 }}>
           {status === 'loading' && (
@@ -323,6 +348,14 @@ export default function App() {
           )}
         </div>
       </header>
+
+      {/* ━━━ SHEET PLAYER TAB ━━━ */}
+      <div style={{ display: activeTab === 'sheet' ? 'flex' : 'none', flex: 1, flexDirection: 'column', overflow: 'hidden', minHeight: 0 }}>
+        <SheetPlayer ref={sheetPlayerRef} />
+      </div>
+
+      {/* ━━━ ZONES TAB ━━━ */}
+      <div style={{ display: activeTab === 'zones' ? 'contents' : 'none' }}>
 
       {/* ━━━ PIANO ━━━ */}
       <Piano 
@@ -459,6 +492,7 @@ export default function App() {
           onEnsureAudioReady={ensureAudioReady}
         />
       </div>
+      </div> {/* end zones tab wrapper */}
     </div>
   )
 }
