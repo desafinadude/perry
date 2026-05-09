@@ -43,9 +43,10 @@ interface Props {
   height?: number // height in pixels, defaults to auto-calculated
   onNoteClick?: (note: number) => void
   learningNote?: number | null // highlight this note when in learning mode
+  highlightNotes?: Set<number> // sheet-player: live MIDI notes shown in accent-1
 }
 
-export function Piano({ zones, activeNotes, height, onNoteClick, learningNote }: Props) {
+export function Piano({ zones, activeNotes, height, onNoteClick, learningNote, highlightNotes }: Props) {
   const containerRef = useRef<HTMLDivElement>(null)
   const [width, setWidth] = useState(0)
 
@@ -67,6 +68,7 @@ export function Piano({ zones, activeNotes, height, onNoteClick, learningNote }:
         {keys.map(({ midi, isBlack, left, width: kw }) => {
           const color = zoneColor(midi, zones)
           const active = activeNotes.has(midi)
+          const highlight = highlightNotes?.has(midi) ?? false
           const isLearning = learningNote === midi
           const isC = midi % 12 === 0
 
@@ -79,9 +81,11 @@ export function Piano({ zones, activeNotes, height, onNoteClick, learningNote }:
                 style={{
                   position: 'absolute', left, top: 0,
                   width: kw - 1, height: wh,
-                  background: isLearning ? '#fbbf24' : active ? '#ddd' : '#fff',
+                  background: isLearning ? '#fbbf24' : highlight ? '#cde0f5' : active ? '#ddd' : '#fff',
                   borderRight: '1px solid var(--border)',
-                  borderBottom: `2px solid ${color ?? 'var(--border)'}`,
+                  borderBottom: highlight
+                    ? '2px solid var(--accent-1)'
+                    : `2px solid ${color ?? 'var(--border)'}`,
                   display: 'flex', flexDirection: 'column',
                   alignItems: 'center', justifyContent: 'flex-end',
                   paddingBottom: 6,
@@ -110,8 +114,8 @@ export function Piano({ zones, activeNotes, height, onNoteClick, learningNote }:
                 style={{
                   position: 'absolute', left, top: 0,
                   width: kw, height: bh,
-                  background: isLearning ? '#fbbf24' : active ? (color ?? '#444') : 'var(--ink)',
-                  borderBottom: color ? `4px solid ${color}` : undefined,
+                  background: isLearning ? '#fbbf24' : highlight ? 'var(--accent-1)' : active ? (color ?? '#444') : 'var(--ink)',
+                  borderBottom: color && !highlight ? `4px solid ${color}` : undefined,
                   zIndex: 2,
                   transition: 'background 80ms ease-out',
                   cursor: onNoteClick ? 'pointer' : 'default',

@@ -9,9 +9,12 @@
     "preview": "vite preview"
   },
   "dependencies": {
+    "lucide-react": "^1.14.0",
+    "opensheetmusicdisplay": "^1.9.9",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
-    "spessasynth_lib": "^4.2.7"
+    "spessasynth_lib": "^4.2.7",
+    "tone": "^15.1.22"
   },
   "devDependencies": {
     "@types/react": "^18.3.1",
