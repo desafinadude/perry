@@ -54,6 +54,8 @@ export default function App() {
     }
   }, [fonts, zones.length, firstMelodicPreset])
 
+  // Tuning UI hidden for now; tuning state removed
+
   // presets keyed by fontId, for ZoneEditor
   const presetsByFont = useMemo<Record<string, Preset[]>>(() => {
     const out: Record<string, Preset[]> = {}
@@ -145,11 +147,19 @@ export default function App() {
   }, [zones, noteOff, learningMode])
 
   const handleCC = useCallback((cc: number, value: number) => {
+    // Block modulation wheel (CC 1) and its LSB (CC 33) which can be noisy/broken on some keyboards.
+    // Swallow these messages so they don't affect tuning or other modulation destinations.
+    if (cc === 1 || cc === 33) {
+      console.log('Blocked modulation CC', cc, value)
+      return
+    }
     sendCC(zones, cc, value)
   }, [zones, sendCC])
 
   const handlePitchBend = useCallback((value: number) => {
-    sendPitchBend(zones, value)
+    // Pitch wheel disabled — keyboard pitch wheel seems faulty and drifts tuning.
+    console.log('Ignored incoming pitch bend from MIDI input:', value)
+    return
   }, [zones, sendPitchBend])
 
   const { inputs, selectedId, selectInput, supported } = useMidi({
@@ -328,6 +338,7 @@ export default function App() {
 
         <div style={{ flex: 1 }} />
 
+
         {/* MIDI selector */}
         <div style={{ display: 'flex', alignItems: 'center', padding: '0 20px', borderLeft: '1px solid #2a2a2a' }}>
           {!supported ? (
@@ -348,6 +359,8 @@ export default function App() {
           )}
         </div>
       </header>
+
+  {/* Settings modal removed/hid per request */}
 
       {/* ━━━ SHEET PLAYER TAB ━━━ */}
       <div style={{ display: activeTab === 'sheet' ? 'flex' : 'none', flex: 1, flexDirection: 'column', overflow: 'hidden', minHeight: 0 }}>
