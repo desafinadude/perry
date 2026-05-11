@@ -12,6 +12,7 @@ import React, {
 import { flushSync } from 'react-dom'
 import { FolderOpen } from 'lucide-react'
 import { Piano } from './Piano'
+import type { Zone } from '../types'
 // @ts-ignore
 import { parseMusicXml } from '../utils/musicXmlParser'
 // @ts-ignore
@@ -28,8 +29,16 @@ export interface SheetPlayerHandle {
   onMidiNoteOff: (note: number) => void
 }
 
-export const SheetPlayer = forwardRef<SheetPlayerHandle>(
-  function SheetPlayer(_props, ref) {
+interface SheetPlayerProps {
+  /** All configured zones from App – used to route sheet-playback audio */
+  zones: Zone[]
+  noteOn: (zone: Zone, note: number, velocity: number) => void
+  noteOff: (zone: Zone, note: number) => void
+  allNotesOff: () => void
+}
+
+export const SheetPlayer = forwardRef<SheetPlayerHandle, SheetPlayerProps>(
+  function SheetPlayer({ zones, noteOn, noteOff, allNotesOff }, ref) {
 
   // ── File / data state ──────────────────────────────────────
   const [xmlString, setXmlString] = useState<string | null>(null)
@@ -70,6 +79,15 @@ export const SheetPlayer = forwardRef<SheetPlayerHandle>(
   const countInRef = useRef(false)
   const isCountingRef = useRef(false)
   const activeMidiNotesKeyRef = useRef('')
+  // Keep latest prop refs so playback callbacks always see current values
+  const zonesRef = useRef<Zone[]>(zones)
+  const noteOnRef = useRef(noteOn)
+  const noteOffRef = useRef(noteOff)
+  const allNotesOffRef = useRef(allNotesOff)
+  useEffect(() => { zonesRef.current = zones }, [zones])
+  useEffect(() => { noteOnRef.current = noteOn }, [noteOn])
+  useEffect(() => { noteOffRef.current = noteOff }, [noteOff])
+  useEffect(() => { allNotesOffRef.current = allNotesOff }, [allNotesOff])
 
   useEffect(() => { metronomeRef.current = metronome }, [metronome])
   useEffect(() => { countInRef.current = countIn }, [countIn])
@@ -158,6 +176,24 @@ export const SheetPlayer = forwardRef<SheetPlayerHandle>(
         ? measureToDisplayTime(loopBarEndRef.current + 1) * scale
         : null
 
+      // Build noteCallbacks from zones marked for playback (usage 'playback' or 'both').
+      // The audio engine will use these instead of its internal Tone PolySynth.
+      const noteCallbacks = {
+        noteOn: (midi: number, velocity: number) => {
+          const activeZones = zonesRef.current.filter(
+            (z) => (z.usage ?? 'both') !== 'midi' && midi >= z.minNote && midi <= z.maxNote
+          )
+          activeZones.forEach((z) => noteOnRef.current(z, midi, velocity))
+        },
+        noteOff: (midi: number) => {
+          const activeZones = zonesRef.current.filter(
+            (z) => (z.usage ?? 'both') !== 'midi' && midi >= z.minNote && midi <= z.maxNote
+          )
+          activeZones.forEach((z) => noteOffRef.current(z, midi))
+        },
+        allOff: () => allNotesOffRef.current(),
+      }
+
       startPlayback(data.timeline, scale, rawStart, data.totalDuration, (rawTime: number) => {
         const uiTime = rawTime / scale
         currentTimeRef.current = uiTime
@@ -200,7 +236,7 @@ export const SheetPlayer = forwardRef<SheetPlayerHandle>(
           isPlayingRef.current = false
           osmdRef.current?.resetCursor()
         }
-      }, metOpts, rawLoopEnd)
+      }, metOpts, rawLoopEnd, noteCallbacks)
 
       setIsPlaying(true)
       isPlayingRef.current = true

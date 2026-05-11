@@ -124,11 +124,40 @@ export function ZoneEditor({ zones, fonts, presetsByFont, onChange, onAdd, onRem
             </div>
 
             {/* Channel */}
-            <div style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '0 12px', alignSelf: 'stretch' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '0 12px', borderRight: '1px solid var(--border)', alignSelf: 'stretch' }}>
               <span style={lbl}>CH</span>
               <select value={zone.channel} onChange={(e) => onChange({ ...zone, channel: Number(e.target.value) })} style={sel}>
                 {Array.from({ length: 16 }, (_, i) => <option key={i} value={i}>{i + 1}</option>)}
               </select>
+            </div>
+
+            {/* Usage: MIDI-through / Both / Playback */}
+            <div style={{ display: 'flex', alignItems: 'center', gap: 0, padding: '0 10px', borderRight: '1px solid var(--border)', alignSelf: 'stretch' }}>
+              <span style={{ ...lbl, marginRight: 6 }}>USE</span>
+              {(['midi', 'both', 'playback'] as const).map((u) => {
+                const active = (zone.usage ?? 'both') === u
+                return (
+                  <button
+                    key={u}
+                    onClick={() => onChange({ ...zone, usage: u })}
+                    title={u === 'midi' ? 'MIDI-through only' : u === 'playback' ? 'Sheet playback only' : 'Both MIDI and playback'}
+                    style={{
+                      background: active ? 'var(--ink)' : 'transparent',
+                      border: '1px solid var(--border)',
+                      borderRadius: 0,
+                      color: active ? 'var(--bg)' : 'var(--muted)',
+                      cursor: 'pointer',
+                      fontFamily: 'var(--font-mono)',
+                      fontSize: 9,
+                      letterSpacing: '0.1em',
+                      padding: '4px 7px',
+                      marginLeft: -1,
+                    }}
+                  >
+                    {u === 'midi' ? 'MIDI' : u === 'playback' ? 'PLAY' : 'BOTH'}
+                  </button>
+                )
+              })}
             </div>
 
             {zones.length > 1 && (

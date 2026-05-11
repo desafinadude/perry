@@ -22,6 +22,8 @@ export interface Zone {
   volume: number
   color: string
   fontId: string
+  /** 'midi' = MIDI-through only · 'playback' = sheet playback only · 'both' = both (default) */
+  usage?: 'midi' | 'playback' | 'both'
   effects?: EffectSettings
 }
 
