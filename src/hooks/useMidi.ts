@@ -46,7 +46,12 @@ export function useMidi(handlers: MidiHandlers) {
     if (!access || !selectedId) return
 
     const onMessage = (e: MIDIMessageEvent) => {
-      const [status, byte1, byte2] = e.data
+      // e.data may be a Uint8Array-like view; ensure we read bytes safely
+  const raw = e.data || new Uint8Array(0)
+  const bytes = new Uint8Array(raw as unknown as ArrayBufferLike)
+      const status = bytes[0]
+      const byte1 = bytes[1]
+      const byte2 = bytes[2]
       const type = status & 0xf0
       if (type === 0x90 && byte2 > 0) {
         handlersRef.current.onNoteOn(byte1, byte2)

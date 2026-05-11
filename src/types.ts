@@ -60,6 +60,24 @@ export const noteNameToMidi = (name: string): number | null => {
   return midi >= 0 && midi <= 127 ? midi : null
 }
 
+// Melodic editor types (used by PianoRoll)
+export interface MelodicNote {
+  note: number
+  start: number
+  length: number
+  velocity: number
+}
+
+export interface MelodicTrack {
+  id: string
+  name?: string
+  notes: MelodicNote[]
+  fontId: string
+  bank: number
+  program: number
+  muted?: boolean
+}
+
 export const PIANO_MIN = 21
 export const PIANO_MAX = 108
 

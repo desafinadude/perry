@@ -185,7 +185,14 @@ export const SheetPlayer = forwardRef<SheetPlayerHandle>(
             stopPlayback()
             setTimeout(() => {
               loopRestartingRef.current = false
-              if (loopRef.current && isPlayingRef.current) handlePlayRef.current?.(lsTime)
+              if (loopRef.current && isPlayingRef.current) {
+                // Ensure the visual cursor jumps to the loop start measure so
+                // graphics follow the repeated audio.
+                if (loopBarStartRef.current !== null) {
+                  try { osmdRef.current?.jumpToMeasure(loopBarStartRef.current) } catch (_) {}
+                }
+                handlePlayRef.current?.(lsTime)
+              }
             }, 30)
           }
         } else if (uiTime >= rawTotal / scale - 0.1) {
@@ -335,7 +342,11 @@ export const SheetPlayer = forwardRef<SheetPlayerHandle>(
             <SheetMusicOSMD
               ref={osmdRef}
               xmlString={xmlString}
-              bpm={audioData?.bpm}
+              // Pass a tempo-scaled BPM so OSMD's timeline is built in the same
+              // display-time units used by the audio engine (uiTime = raw / scale).
+              // This keeps the visual cursor in sync when tempo != 100%.
+              bpm={audioData ? audioData.bpm * (tempo / 100) : undefined}
+              measureOrder={audioData?.measureOrder ?? null}
               loopStart={loopBarStart}
               loopEnd={loopBarEnd}
               matchMode={matchMode}

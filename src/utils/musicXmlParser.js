@@ -37,27 +37,51 @@ export function parseMusicXml(xmlString) {
   const allNoteEvents = []; // { time, duration, midi, partIdx, voiceIdx }
   let noteIdx = 0;
 
+  // measureOrder will be captured from the first part for use by the visual layer
+  let sharedMeasureOrder = null;
+
   parts.forEach((part, partIdx) => {
     const measures = Array.from(part.querySelectorAll('measure'));
     let divisions = 1;
     let absoluteTick = 0; // in divisions (quarter-note ticks)
     let currentBpm = bpm;
 
-    measures.forEach(measure => {
-      // Update divisions if present
+    // Preprocess repeats: expand measures order according to simple forward/backward repeat markers.
+    const orderedMeasureIndices = [];
+    const forwardStack = [];
+    for (let i = 0; i < measures.length; i++) {
+      const m = measures[i];
+      orderedMeasureIndices.push(i);
+      const hasForward = !!m.querySelector('barline repeat[direction="forward"]');
+      const hasBackward = !!m.querySelector('barline repeat[direction="backward"]');
+      if (hasForward) forwardStack.push(i);
+      if (hasBackward) {
+        const start = forwardStack.length ? forwardStack.pop() : 0;
+        for (let j = start; j <= i; j++) orderedMeasureIndices.push(j);
+      }
+    }
+
+    // Capture the expanded measure order from part 0 (all parts share the same structure)
+    if (partIdx === 0) sharedMeasureOrder = orderedMeasureIndices;
+
+    // Process measures in expanded order
+    for (const mi of orderedMeasureIndices) {
+      const measure = measures[mi];
+
+      // Update divisions if present in this measure
       const divEl = measure.querySelector('attributes > divisions');
       if (divEl) divisions = parseInt(divEl.textContent);
+
+      // Check for time signature changes in this measure
+      let measureBeats = beatsPerMeasure;
+      const beatsEl = measure.querySelector('attributes > time > beats');
+      if (beatsEl) measureBeats = parseInt(beatsEl.textContent);
 
       // Update tempo if present
       const soundEls = measure.querySelectorAll('direction > sound[tempo]');
       soundEls.forEach(s => { currentBpm = parseFloat(s.getAttribute('tempo')); });
 
       // Collect note events in this measure.
-      // MusicXML cursor rules:
-      //   normal note  → start at measureTick, then advance by dur
-      //   <chord/> note → start at chordStartTick (same as previous note), no advance
-      //   <backup>      → rewind measureTick by dur (for multi-voice writing)
-      //   <forward>     → advance measureTick by dur
       let measureTick = absoluteTick;
       let chordStartTick = absoluteTick; // start tick of the current chord group
 
@@ -74,7 +98,8 @@ export function parseMusicXml(xmlString) {
 
           if (!isRest) {
             const step = getText(child, 'step');
-            const octave = parseInt(getText(child, 'octave'));
+            const octaveText = getText(child, 'octave');
+            const octave = octaveText ? parseInt(octaveText) : 0;
             const alter = parseFloat(getText(child, 'alter') ?? '0');
             if (step) {
               const midiNote = stepToMidi(step, octave, alter);
@@ -92,7 +117,7 @@ export function parseMusicXml(xmlString) {
 
           // Only advance cursor for non-chord notes; chord notes share startTick
           if (!isChord) {
-            chordStartTick = measureTick; // save before advancing (so next chord note can reference it)
+            chordStartTick = startTick; // ensure chord notes reference the non-chord start
             measureTick += dur;
           }
         } else if (child.tagName === 'backup') {
@@ -105,10 +130,16 @@ export function parseMusicXml(xmlString) {
         }
       }
 
-      // Advance absolute tick by measure length
-      // Use timeSig: beatsPerMeasure quarter-beats = beatsPerMeasure * divisions ticks
-      absoluteTick += beatsPerMeasure * divisions;
-    });
+      // Advance absolute tick by the measured length of this measure. If parsing found
+      // no note durations (measureTick == absoluteTick), fall back to the nominal
+      // beats*divisions value to avoid zero-length measures.
+      const measureLengthTicks = Math.max(1, measureTick - absoluteTick);
+      if (measureLengthTicks <= 1) {
+        absoluteTick += (measureBeats || beatsPerMeasure) * divisions;
+      } else {
+        absoluteTick += measureLengthTicks;
+      }
+    }
   });
 
   if (allNoteEvents.length === 0) return null;
@@ -124,5 +155,5 @@ export function parseMusicXml(xmlString) {
   const timeline = Object.values(byTime).sort((a, b) => a.time - b.time);
   const totalDuration = Math.max(...allNoteEvents.map(n => n.time + n.duration));
 
-  return { bpm, timeSig, beatsPerMeasure, timeline, totalDuration, allNoteEvents };
+  return { bpm, timeSig, beatsPerMeasure, timeline, totalDuration, allNoteEvents, measureOrder: sharedMeasureOrder ?? [] };
 }
