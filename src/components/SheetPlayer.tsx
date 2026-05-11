@@ -56,6 +56,8 @@ export const SheetPlayer = forwardRef<SheetPlayerHandle, SheetPlayerProps>(
   const [metronome, setMetronome] = useState(true)
   const [countIn, setCountIn] = useState(true)
   const [countInBeat, setCountInBeat] = useState(0)
+  // Layer of zones to use for sheet playback audio
+  const [playbackLayer, setPlaybackLayer] = useState<'playback' | 'both' | 'all'>('playback')
 
   // ── Match state ────────────────────────────────────────────
   const [activeMidiNotes, setActiveMidiNotes] = useState<Set<number>>(new Set())
@@ -96,6 +98,11 @@ export const SheetPlayer = forwardRef<SheetPlayerHandle, SheetPlayerProps>(
   useEffect(() => { loopBarStartRef.current = loopBarStart }, [loopBarStart])
   useEffect(() => { loopBarEndRef.current = loopBarEnd }, [loopBarEnd])
   useEffect(() => { matchModeRef.current = matchMode }, [matchMode])
+
+  // Auto-select 'playback' layer (no-op — just keeping effect for future hooks)
+  useEffect(() => {
+    // If no zones exist with layer='playback', fall back gracefully in noteCallbacks
+  }, [zones])
 
   // ── Expose MIDI entry points to parent ─────────────────────
   useImperativeHandle(ref, () => ({
@@ -176,23 +183,21 @@ export const SheetPlayer = forwardRef<SheetPlayerHandle, SheetPlayerProps>(
         ? measureToDisplayTime(loopBarEndRef.current + 1) * scale
         : null
 
-      // Build noteCallbacks from zones marked for playback (usage 'playback' or 'both').
-      // The audio engine will use these instead of its internal Tone PolySynth.
-      const noteCallbacks = {
-        noteOn: (midi: number, velocity: number) => {
-          const activeZones = zonesRef.current.filter(
-            (z) => (z.usage ?? 'both') !== 'midi' && midi >= z.minNote && midi <= z.maxNote
-          )
-          activeZones.forEach((z) => noteOnRef.current(z, midi, velocity))
-        },
-        noteOff: (midi: number) => {
-          const activeZones = zonesRef.current.filter(
-            (z) => (z.usage ?? 'both') !== 'midi' && midi >= z.minNote && midi <= z.maxNote
-          )
-          activeZones.forEach((z) => noteOffRef.current(z, midi))
-        },
+      // Route sheet playback through all zones matching the selected layer.
+      // 'playback' → zones tagged layer='playback'
+      // 'both'     → zones tagged layer='both'
+      // 'all'      → every zone
+      // Fallback: if no matching zones, use all zones.
+      const allZones = zonesRef.current
+      const layerZones = playbackLayer === 'all'
+        ? allZones
+        : allZones.filter(z => (z.layer ?? 'both') === playbackLayer)
+      const activeZones = layerZones.length > 0 ? layerZones : allZones
+      const noteCallbacks = activeZones.length > 0 ? {
+        noteOn: (midi: number, velocity: number) => activeZones.forEach(z => noteOnRef.current(z, midi, velocity)),
+        noteOff: (midi: number) => activeZones.forEach(z => noteOffRef.current(z, midi)),
         allOff: () => allNotesOffRef.current(),
-      }
+      } : null
 
       startPlayback(data.timeline, scale, rawStart, data.totalDuration, (rawTime: number) => {
         const uiTime = rawTime / scale
@@ -346,6 +351,30 @@ export const SheetPlayer = forwardRef<SheetPlayerHandle, SheetPlayerProps>(
       {/* ── Toolbar ── */}
       <div className="sheet-toolbar">
         {fileName && <span className="sp-filename">{fileName}</span>}
+
+        {/* Layer picker for sheet playback audio */}
+        {zones.length > 0 && (
+          <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+            <span style={{ fontFamily: 'var(--font-mono)', fontSize: 10, letterSpacing: '0.12em', color: 'var(--muted)' }}>
+              LAYER
+            </span>
+            <select
+              value={playbackLayer}
+              onChange={e => setPlaybackLayer(e.target.value as 'playback' | 'both' | 'all')}
+              style={{
+                background: 'var(--bg)', border: '1px solid var(--border)',
+                borderRadius: 0, color: 'var(--ink)', fontSize: 11,
+                padding: '3px 6px', fontFamily: 'var(--font-mono)',
+              }}
+              title="Which zone layer sounds during sheet playback"
+            >
+              <option value="playback">PLAY zones only</option>
+              <option value="both">BOTH zones only</option>
+              <option value="all">All zones</option>
+            </select>
+          </div>
+        )}
+
         <label className="sp-load-btn">
           <FolderOpen size={13} strokeWidth={2} />
           LOAD MUSICXML

@@ -22,8 +22,12 @@ export interface Zone {
   volume: number
   color: string
   fontId: string
-  /** 'midi' = MIDI-through only · 'playback' = sheet playback only · 'both' = both (default) */
-  usage?: 'midi' | 'playback' | 'both'
+  /** Which layer this zone belongs to.
+   *  'input'    – responds to live MIDI/keyboard only (silent during sheet playback)
+   *  'playback' – sounds during sheet playback only (silent for live MIDI)
+   *  'both'     – responds to both (default)
+   */
+  layer?: 'input' | 'playback' | 'both'
   effects?: EffectSettings
 }
 

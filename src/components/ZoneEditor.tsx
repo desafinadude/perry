@@ -131,30 +131,30 @@ export function ZoneEditor({ zones, fonts, presetsByFont, onChange, onAdd, onRem
               </select>
             </div>
 
-            {/* Usage: MIDI-through / Both / Playback */}
-            <div style={{ display: 'flex', alignItems: 'center', gap: 0, padding: '0 10px', borderRight: '1px solid var(--border)', alignSelf: 'stretch' }}>
-              <span style={{ ...lbl, marginRight: 6 }}>USE</span>
-              {(['midi', 'both', 'playback'] as const).map((u) => {
-                const active = (zone.usage ?? 'both') === u
+            {/* Layer */}
+            <div style={{ display: 'flex', alignItems: 'center', gap: 0, padding: '0 12px', alignSelf: 'stretch' }}>
+              <span style={{ ...lbl, marginRight: 8 }}>LAYER</span>
+              {(['input', 'both', 'playback'] as const).map((lv) => {
+                const active = (zone.layer ?? 'both') === lv
                 return (
-                  <button
-                    key={u}
-                    onClick={() => onChange({ ...zone, usage: u })}
-                    title={u === 'midi' ? 'MIDI-through only' : u === 'playback' ? 'Sheet playback only' : 'Both MIDI and playback'}
-                    style={{
-                      background: active ? 'var(--ink)' : 'transparent',
-                      border: '1px solid var(--border)',
-                      borderRadius: 0,
-                      color: active ? 'var(--bg)' : 'var(--muted)',
-                      cursor: 'pointer',
-                      fontFamily: 'var(--font-mono)',
-                      fontSize: 9,
-                      letterSpacing: '0.1em',
-                      padding: '4px 7px',
-                      marginLeft: -1,
-                    }}
-                  >
-                    {u === 'midi' ? 'MIDI' : u === 'playback' ? 'PLAY' : 'BOTH'}
+                  <button key={lv} onClick={() => onChange({ ...zone, layer: lv })} style={{
+                    background: active ? 'var(--ink)' : 'transparent',
+                    color: active ? 'var(--bg)' : 'var(--muted)',
+                    border: '1px solid var(--border)',
+                    marginRight: -1,
+                    borderRadius: 0,
+                    cursor: 'pointer',
+                    fontFamily: 'var(--font-mono)',
+                    fontSize: 10,
+                    letterSpacing: '0.1em',
+                    padding: '4px 8px',
+                    fontWeight: active ? 700 : 400,
+                  }} title={
+                    lv === 'input' ? 'Live MIDI only – silent during sheet playback'
+                    : lv === 'playback' ? 'Sheet playback only – silent for live MIDI'
+                    : 'Both – responds to live MIDI and sheet playback'
+                  }>
+                    {lv === 'input' ? 'IN' : lv === 'playback' ? 'PLAY' : 'BOTH'}
                   </button>
                 )
               })}
