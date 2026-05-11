@@ -19,6 +19,7 @@ function makeZone(fontId: string, idx: number, overrides: Partial<Zone> = {}): Z
     volume: 100,
     color: ZONE_COLORS[idx % ZONE_COLORS.length],
     fontId,
+    layer: 'both',
     ...overrides,
   }
 }
@@ -122,7 +123,7 @@ export default function App() {
       return
     }
     
-    const matching = zones.filter((z) => note >= z.minNote && note <= z.maxNote)
+    const matching = zones.filter((z) => note >= z.minNote && note <= z.maxNote && z.layer !== 'playback')
     console.log('Matching zones:', matching.length, 'zones:', zones.length, 'status:', status)
     matching.forEach((z) => {
       console.log('Playing note on zone:', z.name, 'channel:', z.channel)
@@ -140,7 +141,7 @@ export default function App() {
     // Don't play notes when in learning mode
     if (learningMode) return
     
-    zones.filter((z) => note >= z.minNote && note <= z.maxNote).forEach((z) => noteOff(z, note))
+    zones.filter((z) => note >= z.minNote && note <= z.maxNote && z.layer !== 'playback').forEach((z) => noteOff(z, note))
     setActiveNotes((prev) => { const s = new Set(prev); s.delete(note); return s })
     // Record if recorder is active
     recorderRef.current?.recordNoteOff(note)
@@ -364,7 +365,13 @@ export default function App() {
 
       {/* ━━━ SHEET PLAYER TAB ━━━ */}
       <div style={{ display: activeTab === 'sheet' ? 'flex' : 'none', flex: 1, flexDirection: 'column', overflow: 'hidden', minHeight: 0 }}>
-        <SheetPlayer ref={sheetPlayerRef} />
+        <SheetPlayer
+          ref={sheetPlayerRef}
+          zones={zones}
+          noteOn={noteOn}
+          noteOff={noteOff}
+          allNotesOff={allNotesOff}
+        />
       </div>
 
       {/* ━━━ ZONES TAB ━━━ */}

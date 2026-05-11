@@ -10,7 +10,9 @@ function pitchToMidi(pitch) {
   } catch (_) { return null; }
 }
 
-// Walk the cursor and record each step: time, measureIdx, midi numbers, and source Note objects
+// Walk the cursor once and record every step: time, measureIdx, midi numbers, and source notes.
+// This is always a linear walk of the score as written — repeats are handled by remapping
+// time in syncToTime using the measureOrder from the parser.
 function buildTimeline(osmd, bpm) {
   const cursor = osmd.cursor;
   cursor.reset();
@@ -25,7 +27,7 @@ function buildTimeline(osmd, bpm) {
     const measureIdx = cursor.Iterator.CurrentMeasureIndex;
 
     const midi = [];
-    const notes = [];  // source Note objects for direct graphical lookup
+    const notes = [];
     try {
       const sourceNotes = cursor.NotesUnderCursor();
       for (const n of sourceNotes) {
@@ -45,8 +47,48 @@ function buildTimeline(osmd, bpm) {
   return steps;
 }
 
+// Given a playback time that may be in a repeated section (beyond the linear score end),
+// remap it back to the equivalent time within the linear score using the parser's measureOrder.
+function remapTime(timeSec, tl, measureOrder) {
+  if (!measureOrder || measureOrder.length === 0) return timeSec;
+
+  // Build per-measure linear start time and duration from the linear timeline
+  const measLinearStart = new Map();
+  for (const s of tl) {
+    if (!measLinearStart.has(s.measureIdx)) measLinearStart.set(s.measureIdx, s.time);
+  }
+  const sortedMeasures = [...measLinearStart.keys()].sort((a, b) => a - b);
+  const measLinearDur = new Map();
+  for (let i = 0; i < sortedMeasures.length; i++) {
+    const mi = sortedMeasures[i];
+    if (i + 1 < sortedMeasures.length) {
+      measLinearDur.set(mi, measLinearStart.get(sortedMeasures[i + 1]) - measLinearStart.get(mi));
+    } else {
+      // Last measure: estimate from last step
+      const lastStep = tl[tl.length - 1];
+      const dur = Math.max(0.1, lastStep.time - measLinearStart.get(mi) + 0.25);
+      measLinearDur.set(mi, dur);
+    }
+  }
+
+  // Walk measureOrder accumulating expanded time; find which segment timeSec falls in
+  let expandedT = 0;
+  for (const mi of measureOrder) {
+    const dur = measLinearDur.get(mi) ?? 0;
+    if (timeSec < expandedT + dur + 0.001) {
+      // timeSec is within this measure occurrence
+      const offsetInMeasure = timeSec - expandedT;
+      return (measLinearStart.get(mi) ?? 0) + offsetInMeasure;
+    }
+    expandedT += dur;
+  }
+
+  // Beyond all known segments — clamp to last linear time
+  return tl[tl.length - 1]?.time ?? timeSec;
+}
+
 const SheetMusicOSMD = forwardRef(function SheetMusicOSMD(
-  { xmlString, bpm, loopStart, loopEnd, onMeasureClick, onReady, matchMode, isPlaying, onAccuracy },
+  { xmlString, bpm, measureOrder, loopStart, loopEnd, onMeasureClick, onReady, matchMode, isPlaying, onAccuracy },
   ref
 ) {
   const containerRef = useRef(null);
@@ -62,6 +104,8 @@ const SheetMusicOSMD = forwardRef(function SheetMusicOSMD(
   const correctCountRef = useRef(0);
   const totalJudgedRef = useRef(0);
   const isPlayingRef = useRef(false);
+  const measureOrderRef = useRef(measureOrder);
+  useEffect(() => { measureOrderRef.current = measureOrder; }, [measureOrder]);
   useEffect(() => { matchModeRef.current = !!matchMode; }, [matchMode]);
   useEffect(() => { isPlayingRef.current = !!isPlaying; }, [isPlaying]);
 
@@ -77,7 +121,35 @@ const SheetMusicOSMD = forwardRef(function SheetMusicOSMD(
     }
   }, []);
 
-  // Move OSMD visual cursor to a timeline step
+  // Scroll the .sheet-scroll container so the OSMD cursor stays visible.
+  // OSMD exposes cursor.cursorElement — an SVG <g> or <img> it injects into the score.
+  const scrollToCursor = useCallback(() => {
+    try {
+      const cursorEl = osmdRef.current?.cursor?.cursorElement;
+      if (!cursorEl) return;
+      const scrollContainer = containerRef.current?.closest('.sheet-scroll');
+      if (!scrollContainer) return;
+
+      const containerRect = scrollContainer.getBoundingClientRect();
+      const cursorRect = cursorEl.getBoundingClientRect();
+
+      // How far the cursor's top/bottom are relative to the scroll container's viewport
+      const topOffset    = cursorRect.top  - containerRect.top;
+      const bottomOffset = cursorRect.bottom - containerRect.bottom;
+
+      const margin = 80; // px of breathing room above/below the cursor
+
+      if (topOffset < margin) {
+        // Cursor is above (or near the top of) the visible area — scroll up
+        scrollContainer.scrollTop += topOffset - margin;
+      } else if (bottomOffset > -margin) {
+        // Cursor is below (or near the bottom of) the visible area — scroll down
+        scrollContainer.scrollTop += bottomOffset + margin;
+      }
+    } catch (_) {}
+  }, []);
+
+  // Move OSMD visual cursor to a timeline step, then scroll it into view
   const moveCursorToStep = useCallback((target) => {
     const osmd = osmdRef.current;
     if (!osmd) return;
@@ -91,8 +163,9 @@ const SheetMusicOSMD = forwardRef(function SheetMusicOSMD(
         cursorStepRef.current++;
       }
       osmd.cursor.show();
+      scrollToCursor();
     } catch (_) {}
-  }, []);
+  }, [scrollToCursor]);
 
   // ─── Public API ─────────────────────────────────────────────
   useImperativeHandle(ref, () => ({
@@ -101,9 +174,14 @@ const SheetMusicOSMD = forwardRef(function SheetMusicOSMD(
     syncToTime(timeSec) {
       const tl = timelineRef.current;
       if (!tl.length) return;
+
+      // If audio is in a repeated section (time beyond linear score), remap back
+      // to the equivalent position within the linear score before doing the step lookup.
+      const lookupTime = remapTime(timeSec, tl, measureOrderRef.current);
+
       let target = 0;
       for (let i = 0; i < tl.length; i++) {
-        if (tl[i].time <= timeSec + 0.02) target = i;
+        if (tl[i].time <= lookupTime + 0.02) target = i;
         else break;
       }
       if (target === cursorStepRef.current) return;
@@ -195,6 +273,34 @@ const SheetMusicOSMD = forwardRef(function SheetMusicOSMD(
       const step = cursorStepRef.current;
       if (step < 0) return 0;
       return timelineRef.current[step]?.measureIdx ?? 0;
+    },
+
+    // Jump the visual cursor to the start of a measure index (0-based).
+    // This resets the OSMD cursor and advances to the first timeline step
+    // that corresponds to the requested measure.
+    jumpToMeasure(measureIdx) {
+      const osmd = osmdRef.current;
+      if (!osmd) return;
+      try {
+        osmd.cursor.reset();
+        // Find the first timeline step that references this measure
+        const tl = timelineRef.current || [];
+        const targetStep = tl.findIndex(s => s.measureIdx === measureIdx);
+        if (targetStep >= 0) {
+          // advance the cursor targetStep times
+          for (let i = 0; i < targetStep && !osmd.cursor.Iterator.EndReached; i++) {
+            osmd.cursor.next();
+          }
+          cursorStepRef.current = targetStep;
+        } else {
+          // fallback: advance until OSMD's iterator reaches the measure index
+          while (!osmd.cursor.Iterator.EndReached && osmd.cursor.Iterator.CurrentMeasureIndex < measureIdx) {
+            osmd.cursor.next();
+          }
+          cursorStepRef.current = Math.max(0, cursorStepRef.current);
+        }
+        osmd.cursor.show();
+      } catch (_) {}
     },
 
     // Match mode: judge each note individually.

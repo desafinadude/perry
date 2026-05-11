@@ -22,6 +22,12 @@ export interface Zone {
   volume: number
   color: string
   fontId: string
+  /** Which layer this zone belongs to.
+   *  'input'    – responds to live MIDI/keyboard only (silent during sheet playback)
+   *  'playback' – sounds during sheet playback only (silent for live MIDI)
+   *  'both'     – responds to both (default)
+   */
+  layer?: 'input' | 'playback' | 'both'
   effects?: EffectSettings
 }
 
@@ -58,6 +64,24 @@ export const noteNameToMidi = (name: string): number | null => {
   if (noteIndex === -1) return null
   const midi = (parseInt(octave) + 1) * 12 + noteIndex
   return midi >= 0 && midi <= 127 ? midi : null
+}
+
+// Melodic editor types (used by PianoRoll)
+export interface MelodicNote {
+  note: number
+  start: number
+  length: number
+  velocity: number
+}
+
+export interface MelodicTrack {
+  id: string
+  name?: string
+  notes: MelodicNote[]
+  fontId: string
+  bank: number
+  program: number
+  muted?: boolean
 }
 
 export const PIANO_MIN = 21

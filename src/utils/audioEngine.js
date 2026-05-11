@@ -7,6 +7,7 @@ let startRawTime = 0;
 let startWallClock = null;
 let currentScale = 1;
 let onTimeCallback = null;
+let activeNoteCallbacks = null; // saved so stopPlayback can silence zone synth
 
 function initSynth() {
   if (!synth) {
@@ -72,10 +73,13 @@ export async function playCountIn(bpm, beatsPerMeasure, scale, onBeat, onDone) {
 // scale = tempo/100 (>1 = faster, <1 = slower)
 // rawStartTime = position in the score (seconds) to start from
 // metronomeOpts = { enabled: bool, bpm: number, beatsPerMeasure: number } | null
-export async function startPlayback(timeline, scale, rawStartTime, _totalDuration, onTime, metronomeOpts = null, rawLoopEnd = null) {
+// noteCallbacks = { noteOn(midi, velocity), noteOff(midi), allOff() } | null
+//   When provided, zone synth is used for note playback instead of the internal Tone PolySynth.
+export async function startPlayback(timeline, scale, rawStartTime, _totalDuration, onTime, metronomeOpts = null, rawLoopEnd = null, noteCallbacks = null) {
   await Tone.start();
-  initSynth();
+  if (!noteCallbacks) initSynth(); // only init Tone synth when not using zones
   stopPlayback();
+  activeNoteCallbacks = noteCallbacks;
 
   currentScale = scale;
   startRawTime = rawStartTime;
@@ -88,13 +92,26 @@ export async function startPlayback(timeline, scale, rawStartTime, _totalDuratio
   // Schedule note events — stop at loop end if provided
   timeline.forEach(evt => {
     if (evt.time < rawStartTime - 0.01) return;
-    if (rawLoopEnd !== null && evt.time >= rawLoopEnd) return; // don't schedule past loop end
+    if (rawLoopEnd !== null && evt.time >= rawLoopEnd) return;
     const delay = (evt.time - rawStartTime) / scale;
     const dur = Math.max(0.05, evt.duration / scale);
-    const noteNames = evt.midiNotes.map(midiToName);
-    transport.schedule((audioTime) => {
-      try { synth.triggerAttackRelease(noteNames, dur, audioTime); } catch (_) {}
-    }, `+${delay}`);
+
+    if (noteCallbacks) {
+      // Use zone synth: schedule via Tone Transport so timing is accurate.
+      // The callback fires at the precise scheduled audioTime; calling noteOn
+      // at that moment produces sound at exactly the right time via SpessaSynth.
+      transport.schedule(() => {
+        evt.midiNotes.forEach(midi => noteCallbacks.noteOn(midi, 100));
+      }, `+${delay}`);
+      transport.schedule(() => {
+        evt.midiNotes.forEach(midi => noteCallbacks.noteOff(midi));
+      }, `+${delay + dur}`);
+    } else {
+      const noteNames = evt.midiNotes.map(midiToName);
+      transport.schedule((audioTime) => {
+        try { synth.triggerAttackRelease(noteNames, dur, audioTime); } catch (_) {}
+      }, `+${delay}`);
+    }
   });
 
   // Schedule repeating metronome clicks
@@ -126,7 +143,12 @@ export function stopPlayback() {
   stopRaf();
   Tone.getTransport().stop();
   Tone.getTransport().cancel();
-  try { synth?.releaseAll(); } catch (_) {}
+  if (activeNoteCallbacks) {
+    try { activeNoteCallbacks.allOff(); } catch (_) {}
+    activeNoteCallbacks = null;
+  } else {
+    try { synth?.releaseAll(); } catch (_) {}
+  }
   startWallClock = null;
 }
 

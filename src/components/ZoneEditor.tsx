@@ -124,11 +124,40 @@ export function ZoneEditor({ zones, fonts, presetsByFont, onChange, onAdd, onRem
             </div>
 
             {/* Channel */}
-            <div style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '0 12px', alignSelf: 'stretch' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '0 12px', borderRight: '1px solid var(--border)', alignSelf: 'stretch' }}>
               <span style={lbl}>CH</span>
               <select value={zone.channel} onChange={(e) => onChange({ ...zone, channel: Number(e.target.value) })} style={sel}>
                 {Array.from({ length: 16 }, (_, i) => <option key={i} value={i}>{i + 1}</option>)}
               </select>
+            </div>
+
+            {/* Layer */}
+            <div style={{ display: 'flex', alignItems: 'center', gap: 0, padding: '0 12px', alignSelf: 'stretch' }}>
+              <span style={{ ...lbl, marginRight: 8 }}>LAYER</span>
+              {(['input', 'both', 'playback'] as const).map((lv) => {
+                const active = (zone.layer ?? 'both') === lv
+                return (
+                  <button key={lv} onClick={() => onChange({ ...zone, layer: lv })} style={{
+                    background: active ? 'var(--ink)' : 'transparent',
+                    color: active ? 'var(--bg)' : 'var(--muted)',
+                    border: '1px solid var(--border)',
+                    marginRight: -1,
+                    borderRadius: 0,
+                    cursor: 'pointer',
+                    fontFamily: 'var(--font-mono)',
+                    fontSize: 10,
+                    letterSpacing: '0.1em',
+                    padding: '4px 8px',
+                    fontWeight: active ? 700 : 400,
+                  }} title={
+                    lv === 'input' ? 'Live MIDI only – silent during sheet playback'
+                    : lv === 'playback' ? 'Sheet playback only – silent for live MIDI'
+                    : 'Both – responds to live MIDI and sheet playback'
+                  }>
+                    {lv === 'input' ? 'IN' : lv === 'playback' ? 'PLAY' : 'BOTH'}
+                  </button>
+                )
+              })}
             </div>
 
             {zones.length > 1 && (

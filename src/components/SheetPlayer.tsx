@@ -12,6 +12,7 @@ import React, {
 import { flushSync } from 'react-dom'
 import { FolderOpen } from 'lucide-react'
 import { Piano } from './Piano'
+import type { Zone } from '../types'
 // @ts-ignore
 import { parseMusicXml } from '../utils/musicXmlParser'
 // @ts-ignore
@@ -28,8 +29,16 @@ export interface SheetPlayerHandle {
   onMidiNoteOff: (note: number) => void
 }
 
-export const SheetPlayer = forwardRef<SheetPlayerHandle>(
-  function SheetPlayer(_props, ref) {
+interface SheetPlayerProps {
+  /** All configured zones from App – used to route sheet-playback audio */
+  zones: Zone[]
+  noteOn: (zone: Zone, note: number, velocity: number) => void
+  noteOff: (zone: Zone, note: number) => void
+  allNotesOff: () => void
+}
+
+export const SheetPlayer = forwardRef<SheetPlayerHandle, SheetPlayerProps>(
+  function SheetPlayer({ zones, noteOn, noteOff, allNotesOff }, ref) {
 
   // ── File / data state ──────────────────────────────────────
   const [xmlString, setXmlString] = useState<string | null>(null)
@@ -47,6 +56,8 @@ export const SheetPlayer = forwardRef<SheetPlayerHandle>(
   const [metronome, setMetronome] = useState(true)
   const [countIn, setCountIn] = useState(true)
   const [countInBeat, setCountInBeat] = useState(0)
+  // Layer of zones to use for sheet playback audio
+  const [playbackLayer, setPlaybackLayer] = useState<'playback' | 'both' | 'all'>('playback')
 
   // ── Match state ────────────────────────────────────────────
   const [activeMidiNotes, setActiveMidiNotes] = useState<Set<number>>(new Set())
@@ -70,6 +81,15 @@ export const SheetPlayer = forwardRef<SheetPlayerHandle>(
   const countInRef = useRef(false)
   const isCountingRef = useRef(false)
   const activeMidiNotesKeyRef = useRef('')
+  // Keep latest prop refs so playback callbacks always see current values
+  const zonesRef = useRef<Zone[]>(zones)
+  const noteOnRef = useRef(noteOn)
+  const noteOffRef = useRef(noteOff)
+  const allNotesOffRef = useRef(allNotesOff)
+  useEffect(() => { zonesRef.current = zones }, [zones])
+  useEffect(() => { noteOnRef.current = noteOn }, [noteOn])
+  useEffect(() => { noteOffRef.current = noteOff }, [noteOff])
+  useEffect(() => { allNotesOffRef.current = allNotesOff }, [allNotesOff])
 
   useEffect(() => { metronomeRef.current = metronome }, [metronome])
   useEffect(() => { countInRef.current = countIn }, [countIn])
@@ -78,6 +98,11 @@ export const SheetPlayer = forwardRef<SheetPlayerHandle>(
   useEffect(() => { loopBarStartRef.current = loopBarStart }, [loopBarStart])
   useEffect(() => { loopBarEndRef.current = loopBarEnd }, [loopBarEnd])
   useEffect(() => { matchModeRef.current = matchMode }, [matchMode])
+
+  // Auto-select 'playback' layer (no-op — just keeping effect for future hooks)
+  useEffect(() => {
+    // If no zones exist with layer='playback', fall back gracefully in noteCallbacks
+  }, [zones])
 
   // ── Expose MIDI entry points to parent ─────────────────────
   useImperativeHandle(ref, () => ({
@@ -158,6 +183,22 @@ export const SheetPlayer = forwardRef<SheetPlayerHandle>(
         ? measureToDisplayTime(loopBarEndRef.current + 1) * scale
         : null
 
+      // Route sheet playback through all zones matching the selected layer.
+      // 'playback' → zones tagged layer='playback'
+      // 'both'     → zones tagged layer='both'
+      // 'all'      → every zone
+      // Fallback: if no matching zones, use all zones.
+      const allZones = zonesRef.current
+      const layerZones = playbackLayer === 'all'
+        ? allZones
+        : allZones.filter(z => (z.layer ?? 'both') === playbackLayer)
+      const activeZones = layerZones.length > 0 ? layerZones : allZones
+      const noteCallbacks = activeZones.length > 0 ? {
+        noteOn: (midi: number, velocity: number) => activeZones.forEach(z => noteOnRef.current(z, midi, velocity)),
+        noteOff: (midi: number) => activeZones.forEach(z => noteOffRef.current(z, midi)),
+        allOff: () => allNotesOffRef.current(),
+      } : null
+
       startPlayback(data.timeline, scale, rawStart, data.totalDuration, (rawTime: number) => {
         const uiTime = rawTime / scale
         currentTimeRef.current = uiTime
@@ -185,7 +226,14 @@ export const SheetPlayer = forwardRef<SheetPlayerHandle>(
             stopPlayback()
             setTimeout(() => {
               loopRestartingRef.current = false
-              if (loopRef.current && isPlayingRef.current) handlePlayRef.current?.(lsTime)
+              if (loopRef.current && isPlayingRef.current) {
+                // Ensure the visual cursor jumps to the loop start measure so
+                // graphics follow the repeated audio.
+                if (loopBarStartRef.current !== null) {
+                  try { osmdRef.current?.jumpToMeasure(loopBarStartRef.current) } catch (_) {}
+                }
+                handlePlayRef.current?.(lsTime)
+              }
             }, 30)
           }
         } else if (uiTime >= rawTotal / scale - 0.1) {
@@ -193,7 +241,7 @@ export const SheetPlayer = forwardRef<SheetPlayerHandle>(
           isPlayingRef.current = false
           osmdRef.current?.resetCursor()
         }
-      }, metOpts, rawLoopEnd)
+      }, metOpts, rawLoopEnd, noteCallbacks)
 
       setIsPlaying(true)
       isPlayingRef.current = true
@@ -303,6 +351,30 @@ export const SheetPlayer = forwardRef<SheetPlayerHandle>(
       {/* ── Toolbar ── */}
       <div className="sheet-toolbar">
         {fileName && <span className="sp-filename">{fileName}</span>}
+
+        {/* Layer picker for sheet playback audio */}
+        {zones.length > 0 && (
+          <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+            <span style={{ fontFamily: 'var(--font-mono)', fontSize: 10, letterSpacing: '0.12em', color: 'var(--muted)' }}>
+              LAYER
+            </span>
+            <select
+              value={playbackLayer}
+              onChange={e => setPlaybackLayer(e.target.value as 'playback' | 'both' | 'all')}
+              style={{
+                background: 'var(--bg)', border: '1px solid var(--border)',
+                borderRadius: 0, color: 'var(--ink)', fontSize: 11,
+                padding: '3px 6px', fontFamily: 'var(--font-mono)',
+              }}
+              title="Which zone layer sounds during sheet playback"
+            >
+              <option value="playback">PLAY zones only</option>
+              <option value="both">BOTH zones only</option>
+              <option value="all">All zones</option>
+            </select>
+          </div>
+        )}
+
         <label className="sp-load-btn">
           <FolderOpen size={13} strokeWidth={2} />
           LOAD MUSICXML
@@ -335,7 +407,11 @@ export const SheetPlayer = forwardRef<SheetPlayerHandle>(
             <SheetMusicOSMD
               ref={osmdRef}
               xmlString={xmlString}
-              bpm={audioData?.bpm}
+              // Pass a tempo-scaled BPM so OSMD's timeline is built in the same
+              // display-time units used by the audio engine (uiTime = raw / scale).
+              // This keeps the visual cursor in sync when tempo != 100%.
+              bpm={audioData ? audioData.bpm * (tempo / 100) : undefined}
+              measureOrder={audioData?.measureOrder ?? null}
               loopStart={loopBarStart}
               loopEnd={loopBarEnd}
               matchMode={matchMode}
