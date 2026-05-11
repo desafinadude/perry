@@ -121,7 +121,35 @@ const SheetMusicOSMD = forwardRef(function SheetMusicOSMD(
     }
   }, []);
 
-  // Move OSMD visual cursor to a timeline step
+  // Scroll the .sheet-scroll container so the OSMD cursor stays visible.
+  // OSMD exposes cursor.cursorElement — an SVG <g> or <img> it injects into the score.
+  const scrollToCursor = useCallback(() => {
+    try {
+      const cursorEl = osmdRef.current?.cursor?.cursorElement;
+      if (!cursorEl) return;
+      const scrollContainer = containerRef.current?.closest('.sheet-scroll');
+      if (!scrollContainer) return;
+
+      const containerRect = scrollContainer.getBoundingClientRect();
+      const cursorRect = cursorEl.getBoundingClientRect();
+
+      // How far the cursor's top/bottom are relative to the scroll container's viewport
+      const topOffset    = cursorRect.top  - containerRect.top;
+      const bottomOffset = cursorRect.bottom - containerRect.bottom;
+
+      const margin = 80; // px of breathing room above/below the cursor
+
+      if (topOffset < margin) {
+        // Cursor is above (or near the top of) the visible area — scroll up
+        scrollContainer.scrollTop += topOffset - margin;
+      } else if (bottomOffset > -margin) {
+        // Cursor is below (or near the bottom of) the visible area — scroll down
+        scrollContainer.scrollTop += bottomOffset + margin;
+      }
+    } catch (_) {}
+  }, []);
+
+  // Move OSMD visual cursor to a timeline step, then scroll it into view
   const moveCursorToStep = useCallback((target) => {
     const osmd = osmdRef.current;
     if (!osmd) return;
@@ -135,8 +163,9 @@ const SheetMusicOSMD = forwardRef(function SheetMusicOSMD(
         cursorStepRef.current++;
       }
       osmd.cursor.show();
+      scrollToCursor();
     } catch (_) {}
-  }, []);
+  }, [scrollToCursor]);
 
   // ─── Public API ─────────────────────────────────────────────
   useImperativeHandle(ref, () => ({
