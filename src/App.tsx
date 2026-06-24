@@ -3,6 +3,7 @@ import { Piano } from './components/Piano'
 import { ZoneEditor } from './components/ZoneEditor'
 import { Recorder, RecorderHandle } from './components/Recorder'
 import { SheetPlayer, SheetPlayerHandle } from './components/SheetPlayer'
+import { AudioPlayer } from './components/AudioPlayer'
 import { useSynth } from './hooks/useSynth'
 import { useMidi } from './hooks/useMidi'
 import type { Zone, Preset, SavedConfig } from './types'
@@ -32,7 +33,7 @@ export default function App() {
   const [showSaved, setShowSaved] = useState(false)
   const [recorderHeight, setRecorderHeight] = useState(240)
   const [learningMode, setLearningMode] = useState<{ zoneId: string; field: 'minNote' | 'maxNote' } | null>(null)
-  const [activeTab, setActiveTab] = useState<'zones' | 'sheet'>('zones')
+  const [activeTab, setActiveTab] = useState<'zones' | 'sheet' | 'audio'>('zones')
 
   const recorderRef = useRef<RecorderHandle>(null)
   const sheetPlayerRef = useRef<SheetPlayerHandle>(null)
@@ -163,7 +164,7 @@ export default function App() {
     return
   }, [zones, sendPitchBend])
 
-  const { inputs, selectedId, selectInput, supported } = useMidi({
+  const { inputs, supported } = useMidi({
     onNoteOn: handleNoteOn, onNoteOff: handleNoteOff,
     onCC: handleCC, onPitchBend: handlePitchBend,
   })
@@ -281,6 +282,12 @@ export default function App() {
           >
             ♪ SHEET
           </button>
+          <button
+            className={`mode-tab${activeTab === 'audio' ? ' active' : ''}`}
+            onClick={() => setActiveTab('audio')}
+          >
+            ♫ AUDIO
+          </button>
         </div>
 
         {/* SF status */}
@@ -340,7 +347,7 @@ export default function App() {
         <div style={{ flex: 1 }} />
 
 
-        {/* MIDI selector */}
+        {/* MIDI status — listens to all devices automatically */}
         <div style={{ display: 'flex', alignItems: 'center', padding: '0 20px', borderLeft: '1px solid #2a2a2a' }}>
           {!supported ? (
             <span style={{ fontFamily: 'var(--font-mono)', fontSize: 10, color: 'var(--accent-2)', letterSpacing: '0.1em' }}>NO WEB MIDI</span>
@@ -351,10 +358,9 @@ export default function App() {
               <span style={{ fontFamily: 'var(--font-mono)', fontSize: 9, color: '#555', letterSpacing: '0.15em' }}>MIDI INPUT</span>
               <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
                 <div style={{ width: 5, height: 5, background: 'var(--accent-1)' }} />
-                <select value={selectedId ?? ''} onChange={(e) => selectInput(e.target.value)}
-                  style={{ background: 'transparent', border: '1px solid #2a2a2a', borderRadius: 0, color: 'var(--bg)', fontSize: 11, padding: '3px 6px', cursor: 'pointer' }}>
-                  {inputs.map((inp) => <option key={inp.id} value={inp.id}>{inp.name}</option>)}
-                </select>
+                <span style={{ fontFamily: 'var(--font-mono)', fontSize: 10, color: 'var(--bg)', letterSpacing: '0.1em' }}>
+                  {inputs.length} DEVICE{inputs.length > 1 ? 'S' : ''}
+                </span>
               </div>
             </div>
           )}
@@ -372,6 +378,11 @@ export default function App() {
           noteOff={noteOff}
           allNotesOff={allNotesOff}
         />
+      </div>
+
+      {/* ━━━ AUDIO TAB ━━━ */}
+      <div style={{ display: activeTab === 'audio' ? 'flex' : 'none', flex: 1, flexDirection: 'column', overflow: 'hidden', minHeight: 0 }}>
+        <AudioPlayer />
       </div>
 
       {/* ━━━ ZONES TAB ━━━ */}

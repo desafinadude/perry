@@ -21,6 +21,28 @@ import { startPlayback, stopPlayback, pausePlayback, playCountIn } from '../util
 import SheetMusicOSMD from './SheetMusicOSMD'
 // @ts-ignore
 import SheetTransportControls from './SheetTransportControls'
+import {
+  SCALES, CATEGORIES, CATEGORY_LABELS, ROOT_NAMES, rootPcToMidi,
+  type ScaleEntry,
+} from '../data/scales'
+import { generateScaleMusicXml } from '../utils/scaleXmlGenerator'
+
+// ── Scale string transposition helper ──────────────────────────────────────
+const NOTE_PC_MAP: Record<string, number> = {
+  'C': 0, 'D♭': 1, 'D': 2, 'E♭': 3, 'E': 4, 'F': 5,
+  'G♭': 6, 'G': 7, 'A♭': 8, 'A': 9, 'B♭': 10, 'B': 11,
+  'C♯': 1, 'D♯': 3, 'F♯': 6, 'G♯': 8, 'A♯': 10,
+}
+const ROOT_FLAT_NAMES = ['C', 'D♭', 'D', 'E♭', 'E', 'F', 'G♭', 'G', 'A♭', 'A', 'B♭', 'B']
+
+function transposeStr(scaleInC: string, rootPc: number): string {
+  if (rootPc === 0) return scaleInC
+  return scaleInC.replace(/([A-G][♭♯]?)(\([^)]*\))?/g, (match, note, paren) => {
+    const pc = NOTE_PC_MAP[note]
+    if (pc === undefined) return match
+    return ROOT_FLAT_NAMES[(pc + rootPc) % 12] + (paren ?? '')
+  })
+}
 
 export interface SheetPlayerHandle {
   /** Called by App.tsx handleNoteOn to feed live MIDI into match mode */
@@ -64,6 +86,15 @@ export const SheetPlayer = forwardRef<SheetPlayerHandle, SheetPlayerProps>(
   const [matchMode, setMatchMode] = useState(false)
   const [accuracy, setAccuracy] = useState<{ pct: number; correct: number; total: number } | null>(null)
   const [matchLiveNotes, setMatchLiveNotes] = useState<Set<number>>(new Set())
+
+  // ── Scale mode state ───────────────────────────────────────
+  type ScaleCat = typeof CATEGORIES[number]
+  type OctaveMode = 'rh' | 'lh' | 'both'
+  const [scaleMode, setScaleMode] = useState(false)
+  const [scaleCat, setScaleCat] = useState<ScaleCat>('major_modes')
+  const [scaleRootPc, setScaleRootPc] = useState(0)
+  const [scaleIdx, setScaleIdx] = useState(0)
+  const [scaleOctave, setScaleOctave] = useState<OctaveMode>('rh')
 
   // ── Refs ────────────────────────────────────────────────────
   const audioDataRef = useRef<any>(null)
@@ -283,6 +314,52 @@ export const SheetPlayer = forwardRef<SheetPlayerHandle, SheetPlayerProps>(
     if (wasPlaying) setTimeout(() => handlePlayRef.current?.(time), 50)
   }, [])
 
+  // ── Scale auto-generation ───────────────────────────────────
+  // Whenever scale mode is active and any selector changes, regenerate XML and
+  // feed it through the same parseMusicXml pipeline as a normal file load.
+  useEffect(() => {
+    if (!scaleMode) return
+    const scalesInCat = SCALES.filter((s) => s.category === scaleCat)
+    const safeIdx = Math.min(scaleIdx, scalesInCat.length - 1)
+    const scale: ScaleEntry = scalesInCat[safeIdx]
+
+    const rootMidi = rootPcToMidi(scaleRootPc, scaleOctave === 'lh' ? 3 : 4)
+    const rootName = ROOT_NAMES[scaleRootPc]
+
+    // Transpose chord/scale strings from C to selected root
+    const chordInRoot = transposeStr(scale.chordInC, scaleRootPc)
+    const scaleInRoot = transposeStr(scale.scaleInC, scaleRootPc)
+    const altStr = scale.altSymbols.length
+      ? scale.altSymbols.map((s) => s.replace(/^C/, rootName)).join('  ·  ')
+      : ''
+
+    const titleStr = `${scale.symbol.replace(/^C/, rootName)}  —  ${scale.name}`
+    const subtitleStr = `Formula: ${scale.wh}   ·   Chord: ${chordInRoot}`
+    const annotationStr = altStr ? `Also: ${altStr}` : ''
+
+    const xml = generateScaleMusicXml(rootMidi, scale.intervals, {
+      tempo,
+      octaveMode: scaleOctave,
+      numOctaves: 2,
+      title: titleStr,
+      subtitle: subtitleStr,
+      annotation: annotationStr,
+    })
+
+    resetPlayback()
+    try {
+      const audioInfo = parseMusicXml(xml)
+      if (!audioInfo) return
+      audioDataRef.current = audioInfo
+      setAudioData(audioInfo)
+      setXmlString(xml)
+      setFileName(null) // no file name in scale mode
+    } catch (e) {
+      console.error('Scale XML parse error', e)
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [scaleMode, scaleCat, scaleRootPc, scaleIdx, scaleOctave, tempo])
+
   // ── File loading ────────────────────────────────────────────
   const resetPlayback = useCallback(() => {
     stopPlayback()
@@ -350,48 +427,139 @@ export const SheetPlayer = forwardRef<SheetPlayerHandle, SheetPlayerProps>(
     <div className="sheet-player">
       {/* ── Toolbar ── */}
       <div className="sheet-toolbar">
-        {fileName && <span className="sp-filename">{fileName}</span>}
+        {/* File / Scale mode toggle */}
+        <div style={{ display: 'flex', gap: 0, flexShrink: 0 }}>
+          <button
+            onClick={() => { setScaleMode(false); resetPlayback(); setXmlString(null); setAudioData(null); setFileName(null) }}
+            style={{ ...modeTabStyle, ...(scaleMode ? {} : modeTabActiveStyle) }}
+          >
+            FILE
+          </button>
+          <button
+            onClick={() => setScaleMode(true)}
+            style={{ ...modeTabStyle, ...(scaleMode ? modeTabActiveStyle : {}) }}
+          >
+            ♩ SCALE
+          </button>
+        </div>
 
-        {/* Layer picker for sheet playback audio */}
-        {zones.length > 0 && (
-          <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-            <span style={{ fontFamily: 'var(--font-mono)', fontSize: 10, letterSpacing: '0.12em', color: 'var(--muted)' }}>
-              LAYER
-            </span>
-            <select
-              value={playbackLayer}
-              onChange={e => setPlaybackLayer(e.target.value as 'playback' | 'both' | 'all')}
-              style={{
-                background: 'var(--bg)', border: '1px solid var(--border)',
-                borderRadius: 0, color: 'var(--ink)', fontSize: 11,
-                padding: '3px 6px', fontFamily: 'var(--font-mono)',
-              }}
-              title="Which zone layer sounds during sheet playback"
-            >
-              <option value="playback">PLAY zones only</option>
-              <option value="both">BOTH zones only</option>
-              <option value="all">All zones</option>
-            </select>
+        {scaleMode ? (
+          /* ── Scale picker controls ── */
+          <div style={{ display: 'flex', alignItems: 'center', gap: 0, flex: 1, flexWrap: 'wrap' }}>
+            {/* Category */}
+            <div style={scaleCtrlGroup}>
+              <span style={scaleLabel}>CATEGORY</span>
+              <select
+                value={scaleCat}
+                onChange={(e) => { setScaleCat(e.target.value as any); setScaleIdx(0) }}
+                style={scaleSelect}
+              >
+                {CATEGORIES.map((c) => (
+                  <option key={c} value={c}>{CATEGORY_LABELS[c]}</option>
+                ))}
+              </select>
+            </div>
+
+            <div style={scaleDivider} />
+
+            {/* Root */}
+            <div style={scaleCtrlGroup}>
+              <span style={scaleLabel}>ROOT</span>
+              <select
+                value={scaleRootPc}
+                onChange={(e) => setScaleRootPc(Number(e.target.value))}
+                style={{ ...scaleSelect, minWidth: 52 }}
+              >
+                {ROOT_NAMES.map((name, pc) => (
+                  <option key={pc} value={pc}>{name}</option>
+                ))}
+              </select>
+            </div>
+
+            <div style={scaleDivider} />
+
+            {/* Scale navigator */}
+            {(() => {
+              const scalesInCat = SCALES.filter((s) => s.category === scaleCat)
+              const safeIdx = Math.min(scaleIdx, scalesInCat.length - 1)
+              return (
+                <div style={scaleCtrlGroup}>
+                  <span style={scaleLabel}>SCALE  {safeIdx + 1}/{scalesInCat.length}</span>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
+                    <button onClick={() => setScaleIdx((i) => Math.max(0, i - 1))} style={arrowBtnStyle}>◀</button>
+                    <span style={{ fontFamily: 'var(--font-mono)', fontSize: 11, minWidth: 220, textAlign: 'center' as const }}>
+                      {scalesInCat[safeIdx]?.symbol.replace(/^C/, ROOT_NAMES[scaleRootPc])}
+                      {' · '}
+                      {scalesInCat[safeIdx]?.name}
+                    </span>
+                    <button onClick={() => setScaleIdx((i) => Math.min(SCALES.filter((s) => s.category === scaleCat).length - 1, i + 1))} style={arrowBtnStyle}>▶</button>
+                  </div>
+                </div>
+              )
+            })()}
+
+            <div style={scaleDivider} />
+
+            {/* Hands */}
+            <div style={scaleCtrlGroup}>
+              <span style={scaleLabel}>HANDS</span>
+              <div style={{ display: 'flex', gap: 3 }}>
+                {(['rh', 'lh', 'both'] as const).map((m) => (
+                  <button key={m} onClick={() => setScaleOctave(m)}
+                    style={{ ...toggleBtnStyle, ...(scaleOctave === m ? toggleBtnActiveStyle : {}) }}>
+                    {m === 'rh' ? 'RH' : m === 'lh' ? 'LH' : 'BOTH'}
+                  </button>
+                ))}
+              </div>
+            </div>
           </div>
-        )}
+        ) : (
+          /* ── File mode controls ── */
+          <>
+            {fileName && <span className="sp-filename">{fileName}</span>}
 
-        <label className="sp-load-btn">
-          <FolderOpen size={13} strokeWidth={2} />
-          LOAD MUSICXML
-          <input
-            type="file" accept=".xml,.musicxml"
-            style={{ display: 'none' }}
-            onChange={e => {
-              const f = e.target.files?.[0]
-              if (f) {
-                const r = new FileReader()
-                r.onload = ev => handleFileLoad(ev.target!.result as ArrayBuffer, f.name)
-                r.readAsArrayBuffer(f)
-                e.target.value = ''
-              }
-            }}
-          />
-        </label>
+            {/* Layer picker for sheet playback audio */}
+            {zones.length > 0 && (
+              <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                <span style={{ fontFamily: 'var(--font-mono)', fontSize: 10, letterSpacing: '0.12em', color: 'var(--muted)' }}>
+                  LAYER
+                </span>
+                <select
+                  value={playbackLayer}
+                  onChange={e => setPlaybackLayer(e.target.value as 'playback' | 'both' | 'all')}
+                  style={{
+                    background: 'var(--bg)', border: '1px solid var(--border)',
+                    borderRadius: 0, color: 'var(--ink)', fontSize: 11,
+                    padding: '3px 6px', fontFamily: 'var(--font-mono)',
+                  }}
+                  title="Which zone layer sounds during sheet playback"
+                >
+                  <option value="playback">PLAY zones only</option>
+                  <option value="both">BOTH zones only</option>
+                  <option value="all">All zones</option>
+                </select>
+              </div>
+            )}
+
+            <label className="sp-load-btn">
+              <FolderOpen size={13} strokeWidth={2} />
+              LOAD MUSICXML
+              <input
+                type="file" accept=".xml,.musicxml"
+                style={{ display: 'none' }}
+                onChange={e => {
+                  const f = e.target.files?.[0]
+                  if (f) {
+                    const r = new FileReader()
+                    r.onload = ev => handleFileLoad(ev.target!.result as ArrayBuffer, f.name)
+                    r.readAsArrayBuffer(f)
+                    e.target.value = ''
+                  }
+                }}
+              />
+            </label>
+          </>
+        )}
       </div>
 
       {!xmlString ? (
@@ -414,6 +582,7 @@ export const SheetPlayer = forwardRef<SheetPlayerHandle, SheetPlayerProps>(
               measureOrder={audioData?.measureOrder ?? null}
               loopStart={loopBarStart}
               loopEnd={loopBarEnd}
+              stretchToFit={scaleMode}
               matchMode={matchMode}
               isPlaying={isPlaying}
               onAccuracy={(pct: number, correct: number, total: number) =>
@@ -513,3 +682,78 @@ export const SheetPlayer = forwardRef<SheetPlayerHandle, SheetPlayerProps>(
     </div>
   )
 })
+
+// ── Style constants for scale mode toolbar ─────────────────────────────────
+const modeTabStyle: React.CSSProperties = {
+  background: 'transparent',
+  border: '1.5px solid var(--border)',
+  borderRadius: 0,
+  color: 'var(--muted)',
+  cursor: 'pointer',
+  fontFamily: 'var(--font-mono)',
+  fontSize: 10,
+  letterSpacing: '0.12em',
+  padding: '5px 12px',
+}
+const modeTabActiveStyle: React.CSSProperties = {
+  background: 'var(--ink)',
+  border: '1.5px solid var(--ink)',
+  color: 'var(--bg)',
+}
+const scaleCtrlGroup: React.CSSProperties = {
+  display: 'flex',
+  flexDirection: 'column',
+  justifyContent: 'center',
+  gap: 4,
+  padding: '6px 12px',
+}
+const scaleLabel: React.CSSProperties = {
+  fontFamily: 'var(--font-mono)',
+  fontSize: 9,
+  letterSpacing: '0.15em',
+  color: 'var(--muted)',
+  textTransform: 'uppercase',
+}
+const scaleSelect: React.CSSProperties = {
+  background: 'transparent',
+  border: '1px solid var(--border)',
+  borderRadius: 0,
+  color: 'var(--ink)',
+  fontFamily: 'var(--font-mono)',
+  fontSize: 11,
+  padding: '3px 6px',
+  cursor: 'pointer',
+  minWidth: 130,
+}
+const scaleDivider: React.CSSProperties = {
+  width: 1,
+  alignSelf: 'stretch',
+  background: 'var(--border)',
+  flexShrink: 0,
+}
+const arrowBtnStyle: React.CSSProperties = {
+  background: 'transparent',
+  border: '1.5px solid var(--border)',
+  borderRadius: 0,
+  color: 'var(--ink)',
+  cursor: 'pointer',
+  fontFamily: 'var(--font-mono)',
+  fontSize: 11,
+  padding: '3px 8px',
+}
+const toggleBtnStyle: React.CSSProperties = {
+  background: 'transparent',
+  border: '1.5px solid var(--border)',
+  borderRadius: 0,
+  color: 'var(--muted)',
+  cursor: 'pointer',
+  fontFamily: 'var(--font-mono)',
+  fontSize: 10,
+  letterSpacing: '0.1em',
+  padding: '3px 9px',
+}
+const toggleBtnActiveStyle: React.CSSProperties = {
+  background: 'var(--ink)',
+  border: '1.5px solid var(--ink)',
+  color: 'var(--bg)',
+}

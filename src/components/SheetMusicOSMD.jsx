@@ -88,7 +88,7 @@ function remapTime(timeSec, tl, measureOrder) {
 }
 
 const SheetMusicOSMD = forwardRef(function SheetMusicOSMD(
-  { xmlString, bpm, measureOrder, loopStart, loopEnd, onMeasureClick, onReady, matchMode, isPlaying, onAccuracy },
+  { xmlString, bpm, measureOrder, loopStart, loopEnd, onMeasureClick, onReady, matchMode, isPlaying, onAccuracy, stretchToFit },
   ref
 ) {
   const containerRef = useRef(null);
@@ -390,6 +390,12 @@ const SheetMusicOSMD = forwardRef(function SheetMusicOSMD(
         await osmd.load(xmlDoc);
         if (cancelled) return;
 
+        // Stretch all systems (including the last) to fill the full page width.
+        // This makes scale lines span the entire container rather than leaving whitespace.
+        if (stretchToFit) {
+          try { osmd.EngravingRules.StretchLastSystemLine = true; } catch (_) {}
+        }
+
         osmd.render();
         osmdRef.current = osmd;
         osmd.cursor.hide();
@@ -416,7 +422,7 @@ const SheetMusicOSMD = forwardRef(function SheetMusicOSMD(
 
     load();
     return () => { cancelled = true; };
-  }, [xmlString, bpm]);
+  }, [xmlString, bpm, stretchToFit]);
 
   return (
     <div className="sheet-scroll">
