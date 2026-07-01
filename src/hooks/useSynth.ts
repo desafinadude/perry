@@ -180,27 +180,28 @@ export function useSynth() {
     synth.controllerChange(zone.channel, 7, zone.volume)
   }, [])
 
-  const noteOn = useCallback((zone: Zone, note: number, velocity: number) => {
+  const noteOn = useCallback(async (zone: Zone, note: number, velocity: number) => {
     const synth = synthMapRef.current.get(zone.fontId)
     if (!synth) {
       console.warn('No synth found for fontId:', zone.fontId)
       return
     }
     const ctx = audioCtxRef.current
-    console.log('noteOn - AudioContext state:', ctx?.state)
     if (ctx?.state !== 'running') {
-      console.log('Resuming AudioContext...')
-      ctx?.resume().then(() => {
-        console.log('AudioContext resumed, playing note')
-        synth.noteOn(zone.channel, note, velocity)
-      })
-    } else {
-      synth.noteOn(zone.channel, note, velocity)
+      console.log('noteOn - AudioContext not running (state:', ctx?.state, '), resuming...')
+      try { await ctx?.resume() } catch (e) { console.warn('AudioContext resume failed:', e) }
     }
+    synth.noteOn(zone.channel, note, velocity)
   }, [])
 
-  const noteOff = useCallback((zone: Zone, note: number) => {
-    synthMapRef.current.get(zone.fontId)?.noteOff(zone.channel, note)
+  const noteOff = useCallback(async (zone: Zone, note: number) => {
+    const synth = synthMapRef.current.get(zone.fontId)
+    if (!synth) return
+    const ctx = audioCtxRef.current
+    if (ctx?.state !== 'running') {
+      try { await ctx?.resume() } catch (e) { console.warn('AudioContext resume failed:', e) }
+    }
+    synth.noteOff(zone.channel, note)
   }, [])
 
   const sendCC = useCallback((zones: Zone[], cc: number, value: number) => {
