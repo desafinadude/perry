@@ -1,0 +1,32 @@
+#!/bin/sh
+set -e
+DIR=/var/home/dimee/Work/Projects/perry
+PORT=1234
+URL="http://localhost:$PORT"
+
+cd "$DIR"
+
+# Start dev server in background
+yarn dev &
+
+# Wait for the port to be ready
+echo "Waiting for $URL ..."
+for i in $(seq 1 30); do
+  if nc -z localhost "$PORT" 2>/dev/null; then
+    break
+  fi
+  sleep 1
+done
+
+# Open browser
+xdg-open "$URL" 2>/dev/null || true
+
+# Let the page load
+sleep 3
+
+# Reload USB audio so MIDI devices re-appear in the browser
+echo "Reloading USB audio module for MIDI detection..."
+sudo modprobe -r snd-usb-audio && sudo modprobe snd-usb-audio
+
+# Bring dev server to foreground
+wait
