@@ -37,6 +37,7 @@ export default function App() {
 
   const recorderRef = useRef<RecorderHandle>(null)
   const sheetPlayerRef = useRef<SheetPlayerHandle>(null)
+  const audioResumedRef = useRef(false)
 
   const {
     status, loadProgress, errorMsg, fonts,
@@ -245,8 +246,15 @@ export default function App() {
     }
   }, [learningMode, handleNoteOn])
 
+  // Resume AudioContext on first user gesture (browser autoplay policy)
+  const handleUserGesture = useCallback(() => {
+    if (audioResumedRef.current) return
+    audioResumedRef.current = true
+    ensureAudioReady()
+  }, [ensureAudioReady])
+
   return (
-    <div style={{ height: '100vh', display: 'flex', flexDirection: 'column', background: 'var(--bg)', overflow: 'hidden' }}>
+    <div style={{ height: '100vh', display: 'flex', flexDirection: 'column', background: 'var(--bg)', overflow: 'hidden' }} onMouseDown={handleUserGesture}>
 
       {/* Hidden font file input */}
       <input ref={fontFileInputRef} type="file" accept=".sf2,.sf3"
