@@ -4,6 +4,7 @@ interface Voice {
   note: number
   src: AudioBufferSourceNode
   vca: GainNode
+  peak: number
   startedAt: number
 }
 
@@ -63,6 +64,25 @@ export class Sampler {
       const cached = getCachedSample(s.fileName)
       if (cached) this.buffer = cached
     }
+    // live-update sounding voices: pitch (root note), loop region, sustain
+    const now = this.ctx.currentTime
+    for (const list of this.voices.values()) {
+      for (const v of list) {
+        v.src.playbackRate.setTargetAtTime(Math.pow(2, (v.note - s.rootNote) / 12), now, 0.01)
+        const buf = v.src.buffer
+        if (buf) {
+          const start = Math.max(0, Math.min(s.loopStart, buf.duration - 0.01))
+          const end = Math.max(start + 0.01, Math.min(s.loopEnd || buf.duration, buf.duration))
+          v.src.loopStart = start
+          v.src.loopEnd = end
+        }
+        v.src.loop = s.loop
+        if (now >= v.startedAt + s.ampAttack + s.ampDecay) {
+          v.vca.gain.cancelScheduledValues(now)
+          v.vca.gain.setTargetAtTime(Math.max(0, Math.min(1, s.ampSustain)) * v.peak, now, 0.02)
+        }
+      }
+    }
   }
 
   setBuffer(buffer: AudioBuffer | null): void {
@@ -118,7 +138,7 @@ export class Sampler {
     vca.connect(this.output)
     src.start(now)
 
-    const voice: Voice = { note, src, vca, startedAt: now }
+    const voice: Voice = { note, src, vca, peak, startedAt: now }
     const list = this.voices.get(note) ?? []
     // one-shot drums retrigger cleanly; sustained sources overlap
     if (s.oneShot) {
@@ -129,11 +149,10 @@ export class Sampler {
       this.voices.set(note, list)
     }
 
-    if (!s.loop) {
-      src.onended = () => {
-        this.removeVoice(voice)
-        try { vca.disconnect() } catch { /* already disconnected */ }
-      }
+    // loop can be switched off live, so clean up whenever the source ends
+    src.onended = () => {
+      this.removeVoice(voice)
+      try { vca.disconnect() } catch { /* already disconnected */ }
     }
   }
 

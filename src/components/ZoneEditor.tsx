@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import type { CSSProperties, ReactNode } from 'react'
 import type { Zone, Preset, LoadedFont, ZoneEngine } from '../types'
 import { noteName, ZONE_COLORS, defaultEffects, defaultSynth, defaultSampler } from '../types'
@@ -28,6 +28,8 @@ interface Props {
   sampleInfo: Record<string, { loaded: boolean; duration: number | null }>
   /** Rendered at the bottom of the zone rail (config save / presets). */
   railFooter?: ReactNode
+  /** Analyser on a zone's output (for the synth scope). */
+  getZoneAnalyser: (zone: Zone) => AnalyserNode | null
 }
 
 const ENGINES = [
@@ -128,8 +130,12 @@ function ZoneCard({ zone, selected, onSelect, presets }: { zone: Zone; selected:
 
 function ZoneDetail({
   zone, index, zones, fonts, presetsByFont, onChange, onRemove, onLoadFont,
-  learningMode, onSetLearningMode, onLoadSample, sampleInfo,
+  learningMode, onSetLearningMode, onLoadSample, sampleInfo, getZoneAnalyser,
 }: Props & { zone: Zone; index: number }) {
+  // stable getter so the scope's animation loop isn't restarted on every knob turn
+  const zoneRef = useRef(zone)
+  zoneRef.current = zone
+  const getAnalyser = useCallback(() => getZoneAnalyser(zoneRef.current), [getZoneAnalyser])
   const engine = zone.engine ?? 'soundfont'
   const presets = presetsByFont[zone.fontId] ?? []
   const learning = (f: LearnField) => learningMode?.zoneId === zone.id && learningMode.field === f
@@ -199,7 +205,7 @@ function ZoneDetail({
 
       {/* ── Engine faceplate ── */}
       {engine === 'synth' && zone.synth && (
-        <SynthPanel synth={zone.synth} onChange={(s) => onChange({ ...zone, synth: s })} />
+        <SynthPanel synth={zone.synth} onChange={(s) => onChange({ ...zone, synth: s })} getAnalyser={getAnalyser} />
       )}
       {engine === 'sampler' && zone.sampler && (
         <SamplerPanel
