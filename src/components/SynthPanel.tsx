@@ -1,22 +1,26 @@
 import type { CSSProperties } from 'react'
 import type { SynthSettings, SynthOsc } from '../types'
 import { Knob } from './Knob'
+import { SynthScope } from './SynthScope'
 import { Module, KnobRow, Segmented, WaveSelector, EnvelopeGraph, waveName, lbl } from './controls'
 import { fmtPct, fmtHz, fmtMs, fmtCents } from './format'
 
 interface Props {
   synth: SynthSettings
   onChange: (s: SynthSettings) => void
+  /** Analyser on this zone's output, for the LIVE scope. */
+  getAnalyser: () => AnalyserNode | null
 }
 
 const FILTER_TYPES = [['lowpass', 'LP'], ['highpass', 'HP'], ['bandpass', 'BP']] as const
 
 /**
  * Built-in subtractive synth faceplate on a 3-column grid:
+ *   SCOPE (waveform + spectrum, spans all 3)
  *   OSC 1 | OSC 2 | NOISE + LFO
  *   FILTER | AMP ENVELOPE (spans 2)
  */
-export function SynthPanel({ synth, onChange }: Props) {
+export function SynthPanel({ synth, onChange, getAnalyser }: Props) {
   const set = <K extends keyof SynthSettings>(key: K, value: SynthSettings[K]) =>
     onChange({ ...synth, [key]: value })
   const setOsc = (which: 'osc1' | 'osc2', patch: Partial<SynthOsc>) =>
@@ -24,6 +28,7 @@ export function SynthPanel({ synth, onChange }: Props) {
 
   return (
     <section aria-label="Synth" style={grid}>
+      <SynthScope synth={synth} getAnalyser={getAnalyser} />
       <OscModule title="OSC 1" osc={synth.osc1} onChange={(p) => setOsc('osc1', p)} />
       <OscModule title="OSC 2" osc={synth.osc2} onChange={(p) => setOsc('osc2', p)} />
 

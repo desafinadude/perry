@@ -6,10 +6,15 @@ interface Voice {
   note: number
   osc1: OscillatorNode
   osc2: OscillatorNode
-  noise: AudioBufferSourceNode | null
+  noise: AudioBufferSourceNode
+  g1: GainNode
+  g2: GainNode
+  ng: GainNode
   mix: GainNode
   filter: BiquadFilterNode
   vca: GainNode
+  freq: number
+  peak: number
   startedAt: number
 }
 
@@ -33,9 +38,9 @@ const mtof = (note: number) => 440 * Math.pow(2, (note - 69) / 12)
  * Built-in subtractive synthesizer: two oscillators + noise →
  * filter with envelope → ADSR VCA. One instance per zone.
  *
- * New parameter values apply to newly struck voices (classic synth
- * behaviour); the LFO is shared across the patch so vibrato settings
- * also reach voices that are already sounding.
+ * Every parameter is live: turning a knob reshapes voices that are
+ * already sounding (smoothed to avoid zipper noise), not only the next
+ * note. Attack/decay shape the next strike; release applies on key-up.
  */
 export class SubtractiveSynth {
   readonly output: GainNode
@@ -73,10 +78,29 @@ export class SubtractiveSynth {
     const now = this.ctx.currentTime
     this.lfo.frequency.setTargetAtTime(s.lfoRate, now, 0.02)
     this.lfoDepth.gain.setTargetAtTime(s.lfoDepth, now, 0.02)
-    // live voices pick up filter/env changes on their next note;
-    // cutoff of sounding voices follows immediately if unchanged env
+    const t = 0.02
+    const cutoff = Math.max(20, Math.min(18000, s.cutoff))
     for (const v of this.voices.values()) {
-      v.filter.type = s.filterType
+      if (v.osc1.type !== s.osc1.wave) v.osc1.type = s.osc1.wave
+      if (v.osc2.type !== s.osc2.wave) v.osc2.type = s.osc2.wave
+      v.osc1.frequency.setTargetAtTime(v.freq * Math.pow(2, s.osc1.octave), now, t)
+      v.osc2.frequency.setTargetAtTime(v.freq * Math.pow(2, s.osc2.octave), now, t)
+      v.osc1.detune.setTargetAtTime(s.osc1.detune, now, t)
+      v.osc2.detune.setTargetAtTime(s.osc2.detune, now, t)
+      v.g1.gain.setTargetAtTime(s.osc1.level, now, t)
+      v.g2.gain.setTargetAtTime(s.osc2.level, now, t)
+      v.ng.gain.setTargetAtTime(s.noise, now, t)
+      if (v.filter.type !== s.filterType) v.filter.type = s.filterType
+      v.filter.Q.setTargetAtTime(s.resonance, now, t)
+      // drop any running filter-envelope sweep and glide to the new cutoff
+      v.filter.frequency.cancelScheduledValues(now)
+      v.filter.frequency.setTargetAtTime(cutoff, now, t)
+      // sustain level follows once the voice is past attack + decay
+      if (now >= v.startedAt + s.ampAttack + s.ampDecay) {
+        const sus = Math.max(0, Math.min(1, s.ampSustain)) * v.peak
+        v.vca.gain.cancelScheduledValues(now)
+        v.vca.gain.setTargetAtTime(sus, now, t)
+      }
     }
   }
 
@@ -123,17 +147,15 @@ export class SubtractiveSynth {
     g1.connect(mix)
     g2.connect(mix)
 
-    let noise: AudioBufferSourceNode | null = null
-    if (s.noise > 0) {
-      noise = ctx.createBufferSource()
-      noise.buffer = getNoiseBuffer(ctx)
-      noise.loop = true
-      const ng = ctx.createGain()
-      ng.gain.value = s.noise
-      noise.connect(ng)
-      ng.connect(mix)
-      noise.start(now)
-    }
+    // noise always runs (at its level, possibly 0) so the knob is live
+    const noise = ctx.createBufferSource()
+    noise.buffer = getNoiseBuffer(ctx)
+    noise.loop = true
+    const ng = ctx.createGain()
+    ng.gain.value = s.noise
+    noise.connect(ng)
+    ng.connect(mix)
+    noise.start(now, Math.random() * 1.5)
 
     const filter = ctx.createBiquadFilter()
     filter.type = s.filterType
@@ -163,7 +185,7 @@ export class SubtractiveSynth {
     osc1.start(now)
     osc2.start(now)
 
-    const voice: Voice = { note, osc1, osc2, noise, mix, filter, vca, startedAt: now }
+    const voice: Voice = { note, osc1, osc2, noise, g1, g2, ng, mix, filter, vca, freq, peak, startedAt: now }
     this.voices.set(note, voice)
 
     // voice stealing — oldest gets a fast fade-out
@@ -205,7 +227,7 @@ export class SubtractiveSynth {
     try {
       v.osc1.stop(stopAt)
       v.osc2.stop(stopAt)
-      v.noise?.stop(stopAt)
+      v.noise.stop(stopAt)
     } catch { /* already stopped */ }
     v.osc1.onended = cleanup
     // onended can be missed if nodes were stopped in the same quantum —
@@ -224,7 +246,10 @@ export class SubtractiveSynth {
       v.vca.disconnect()
       v.osc1.disconnect()
       v.osc2.disconnect()
-      v.noise?.disconnect()
+      v.noise.disconnect()
+      v.g1.disconnect()
+      v.g2.disconnect()
+      v.ng.disconnect()
     } catch { /* already disconnected */ }
   }
 
@@ -254,7 +279,7 @@ export class SubtractiveSynth {
         v.vca.gain.setValueAtTime(0, now)
         v.osc1.stop(now)
         v.osc2.stop(now)
-        v.noise?.stop(now)
+        v.noise.stop(now)
       } catch { /* already stopped */ }
       this.destroyVoice(v)
     }

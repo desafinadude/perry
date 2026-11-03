@@ -482,6 +482,27 @@ export function useSynth() {
     return file.name
   }, [getCtx])
 
+  // ── Analysers (scope / spectrum) ─────────────────────────────────────────────
+  const analysersRef = useRef<WeakMap<EffectsChain, AnalyserNode>>(new WeakMap())
+  /**
+   * Analyser tapped off a zone's FX-chain output (post effects, pre master).
+   * Created lazily and cached per chain; returns null before audio exists.
+   */
+  const getZoneAnalyser = useCallback((zone: Zone): AnalyserNode | null => {
+    const ctx = audioCtxRef.current
+    const chain = chainsRef.current.get(chainKeyFor(zone))
+    if (!ctx || !chain) return null
+    let a = analysersRef.current.get(chain)
+    if (!a) {
+      a = ctx.createAnalyser()
+      a.fftSize = 4096
+      a.smoothingTimeConstant = 0.75
+      chain.output.connect(a)
+      analysersRef.current.set(chain, a)
+    }
+    return a
+  }, [])
+
   // Ensure audio context is running (call before playback)
   const ensureAudioReady = useCallback(async () => {
     const ctx = audioCtxRef.current
@@ -505,6 +526,6 @@ export function useSynth() {
     allNotesOff,
     ensureAudioReady,
     firstMelodicPreset,
-    syncAudio, loadSampleForZone,
+    syncAudio, loadSampleForZone, getZoneAnalyser,
   }
 }

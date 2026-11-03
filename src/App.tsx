@@ -47,7 +47,7 @@ export default function App() {
     loadFont, removeFont,
     applyZone, noteOn, noteOff, sendCC, sendPitchBend,
     allNotesOff, ensureAudioReady, firstMelodicPreset,
-    syncAudio, loadSampleForZone,
+    syncAudio, loadSampleForZone, getZoneAnalyser,
   } = useSynth()
 
   // Once a font loads, create default zone if none exist
@@ -471,6 +471,7 @@ export default function App() {
           onSetLearningMode={setLearningMode}
           onLoadSample={handleLoadSample}
           sampleInfo={sampleInfo}
+          getZoneAnalyser={getZoneAnalyser}
           railFooter={
             <div style={{ borderTop: '1px solid var(--border)', padding: '12px 18px', display: 'flex', flexDirection: 'column', gap: 10, position: 'relative' }}>
               <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
