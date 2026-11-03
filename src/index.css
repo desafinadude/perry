@@ -1,4 +1,4 @@
-@import url('https://fonts.googleapis.com/css2?family=Bebas+Neue&family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans+Condensed:wght@300;400&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Barlow+Condensed:wght@700;800&family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans+Condensed:wght@300;400&display=swap');
 
 :root {
   --bg:       #F5F2EC;
@@ -8,8 +8,11 @@
   --accent-2: #D93B2B;
   --muted:    #888880;
   --border:   #C8C5BB;
+  --label:    #5F5D56;   /* small-label grey that passes 4.5:1 on --bg */
+  --bypass:   #E4E1D8;   /* background of a switched-off FX unit */
 
   --font-display: 'Bebas Neue', 'Impact', sans-serif;
+  --font-head:    'Barlow Condensed', 'Bebas Neue', sans-serif;
   --font-mono:    'IBM Plex Mono', 'Courier New', monospace;
   --font-body:    'IBM Plex Sans Condensed', sans-serif;
 }
@@ -441,3 +444,7 @@ input[type="range"]::-moz-range-thumb {
 }
 .count-dot.active { background: var(--accent-1); transform: scale(1.6); }
 
+
+/* Knob focus ring (keyboard users) */
+.perry-knob { outline: none; }
+.perry-knob:focus-visible { outline: 2px solid var(--accent-1); outline-offset: 2px; }

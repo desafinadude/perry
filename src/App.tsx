@@ -1,6 +1,7 @@
 import { useState, useCallback, useEffect, useRef, useMemo } from 'react'
 import { Piano } from './components/Piano'
 import { ZoneEditor } from './components/ZoneEditor'
+import type { LearningMode } from './components/ZoneEditor'
 import { Recorder, RecorderHandle } from './components/Recorder'
 import { SheetPlayer, SheetPlayerHandle } from './components/SheetPlayer'
 import { AudioPlayer } from './components/AudioPlayer'
@@ -33,8 +34,8 @@ export default function App() {
   const [savedConfigs, setSavedConfigs] = useState<SavedConfig[]>(getSavedConfigs)
   const [saveInput, setSaveInput] = useState('')
   const [showSaved, setShowSaved] = useState(false)
-  const [recorderHeight, setRecorderHeight] = useState(240)
-  const [learningMode, setLearningMode] = useState<{ zoneId: string; field: 'minNote' | 'maxNote' } | null>(null)
+  const [recorderHeight, setRecorderHeight] = useState(180)
+  const [learningMode, setLearningMode] = useState<LearningMode>(null)
   const [activeTab, setActiveTab] = useState<'zones' | 'sheet' | 'audio'>('zones')
 
   const recorderRef = useRef<RecorderHandle>(null)
@@ -136,7 +137,10 @@ export default function App() {
       const { zoneId, field } = learningMode
       const zone = zones.find(z => z.id === zoneId)
       if (zone) {
-        if (field === 'minNote') {
+        if (field === 'rootNote') {
+          setZones((prev) => prev.map((z) => z.id === zoneId
+            ? { ...z, sampler: { ...(z.sampler ?? defaultSampler()), rootNote: note } } : z))
+        } else if (field === 'minNote') {
           setZones((prev) => prev.map((z) => z.id === zoneId ? { ...z, minNote: Math.min(note, zone.maxNote) } : z))
         } else {
           setZones((prev) => prev.map((z) => z.id === zoneId ? { ...z, maxNote: Math.max(note, zone.minNote) } : z))
@@ -453,43 +457,45 @@ export default function App() {
         learningNote={learningMode ? null : null}
       />
 
-      {/* ━━━ ZONES ━━━ */}
-      <div style={{ flex: 1, display: 'flex', flexDirection: 'column', minHeight: 0, overflow: 'hidden' }}>
-        <div style={{
-          display: 'flex', alignItems: 'center', borderBottom: '2px solid var(--ink)',
-          background: 'var(--surface)', minHeight: 42, padding: '0 0 0 11px',
-        }}>
-          <span style={{ fontFamily: 'var(--font-display)', fontSize: 30, letterSpacing: '0.1em', paddingRight: 16, borderRight: '1px solid var(--border)' }}>
-            ZONES
-          </span>
-          <span style={{ fontFamily: 'var(--font-mono)', fontSize: 10, color: 'var(--muted)', letterSpacing: '0.1em', padding: '0 16px', borderRight: '1px solid var(--border)' }}>
-            {zones.length}/8
-          </span>
-
-          {/* Save config */}
-          <div style={{ display: 'flex', alignItems: 'center', padding: '0 16px', borderRight: '1px solid var(--border)', alignSelf: 'stretch', gap: 6 }}>
-            <input value={saveInput} onChange={(e) => setSaveInput(e.target.value)}
-              onKeyDown={(e) => e.key === 'Enter' && handleSave()}
-              placeholder="config name"
-              style={{ background: 'transparent', border: 'none', borderBottom: '1px solid var(--border)', color: 'var(--ink)', fontSize: 11, padding: '2px 4px', outline: 'none', width: 110 }} />
-            <button onClick={handleSave} style={ghostBtn}>SAVE</button>
-          </div>
-
-          {savedConfigs.length > 0 && (
-            <div style={{ position: 'relative', alignSelf: 'stretch', display: 'flex', alignItems: 'center' }}>
-              <button onClick={() => setShowSaved((v) => !v)} style={{
-                ...ghostBtn, margin: '0 16px',
-                background: showSaved ? 'var(--accent-1)' : 'transparent',
-                color: showSaved ? '#fff' : 'var(--ink)',
-                border: showSaved ? '1.5px solid var(--accent-1)' : '1.5px solid var(--ink)',
-              }}>
-                PRESETS {showSaved ? '▲' : '▼'}
-              </button>
+      {/* ━━━ ZONES: rail + selected-zone faceplate ━━━ */}
+      <div style={{ flex: 1, display: 'flex', minHeight: 0, overflow: 'hidden' }}>
+        <ZoneEditor
+          zones={zones}
+          fonts={fonts}
+          presetsByFont={presetsByFont}
+          onChange={handleZoneChange}
+          onAdd={handleAddZone}
+          onRemove={handleRemoveZone}
+          onLoadFont={handleLoadFontForZone}
+          learningMode={learningMode}
+          onSetLearningMode={setLearningMode}
+          onLoadSample={handleLoadSample}
+          sampleInfo={sampleInfo}
+          railFooter={
+            <div style={{ borderTop: '1px solid var(--border)', padding: '12px 18px', display: 'flex', flexDirection: 'column', gap: 10, position: 'relative' }}>
+              <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                <label htmlFor="cfg-name" style={railLabel}>CONFIG</label>
+                <input id="cfg-name" value={saveInput} onChange={(e) => setSaveInput(e.target.value)}
+                  onKeyDown={(e) => e.key === 'Enter' && handleSave()}
+                  placeholder="name"
+                  style={{ flex: 1, minWidth: 0, height: 32, background: 'transparent', border: 'none', borderBottom: '1.5px solid var(--ink)', color: 'var(--ink)', fontSize: 11, outline: 'none' }} />
+                <button onClick={handleSave} style={{ ...ghostBtn, height: 32 }}>SAVE</button>
+              </div>
+              {savedConfigs.length > 0 && (
+                <button onClick={() => setShowSaved((v) => !v)} aria-expanded={showSaved} style={{
+                  ...ghostBtn, height: 32,
+                  background: showSaved ? 'var(--accent-1)' : 'transparent',
+                  color: showSaved ? '#fff' : 'var(--ink)',
+                  border: showSaved ? '1.5px solid var(--accent-1)' : '1.5px solid var(--ink)',
+                }}>
+                  SAVED CONFIGS ({savedConfigs.length}) {showSaved ? '▼' : '▲'}
+                </button>
+              )}
               {showSaved && (
                 <div style={{
-                  position: 'absolute', top: '100%', left: 16, zIndex: 100,
-                  background: 'var(--bg)', border: '1.5px solid var(--ink)',
-                  minWidth: 220, boxShadow: '4px 4px 0 var(--ink)',
+                  position: 'absolute', bottom: '100%', left: 18, right: 18, zIndex: 100,
+                  background: 'var(--bg)', border: '1.5px solid var(--ink)', boxShadow: '4px 4px 0 var(--ink)',
+                  maxHeight: 280, overflowY: 'auto',
                 }}>
                   {savedConfigs.map((cfg) => (
                     <div key={cfg.id} style={{ display: 'flex', alignItems: 'center', borderBottom: '1px solid var(--border)' }}>
@@ -499,41 +505,19 @@ export default function App() {
                         fontSize: 11, padding: '9px 12px', letterSpacing: '0.05em',
                       }}>
                         {cfg.name}
-                        <span style={{ marginLeft: 8, color: 'var(--muted)', fontSize: 10 }}>{cfg.zones.length}Z</span>
+                        <span style={{ marginLeft: 8, color: 'var(--label)', fontSize: 10 }}>{cfg.zones.length}Z</span>
                       </button>
-                      <button onClick={() => handleDelete(cfg.id)} style={{
+                      <button onClick={() => handleDelete(cfg.id)} aria-label={`Delete ${cfg.name}`} style={{
                         background: 'transparent', border: 'none', borderLeft: '1px solid var(--border)',
-                        color: 'var(--muted)', cursor: 'pointer', padding: '0 12px', alignSelf: 'stretch', fontSize: 14,
+                        color: 'var(--label)', cursor: 'pointer', padding: '0 12px', alignSelf: 'stretch', fontSize: 14,
                       }}>×</button>
                     </div>
                   ))}
                 </div>
               )}
             </div>
-          )}
-
-          {activeNotes.size > 0 && (
-            <span style={{ marginLeft: 'auto', marginRight: 16, fontFamily: 'var(--font-mono)', fontSize: 9, color: 'var(--accent-1)', letterSpacing: '0.15em' }}>
-              ● {activeNotes.size > 1 ? `${activeNotes.size} NOTES` : '1 NOTE'}
-            </span>
-          )}
-        </div>
-
-        <div style={{ flex: 1, overflowY: 'auto' }}>
-          <ZoneEditor
-            zones={zones}
-            fonts={fonts}
-            presetsByFont={presetsByFont}
-            onChange={handleZoneChange}
-            onAdd={handleAddZone}
-            onRemove={handleRemoveZone}
-            onLoadFont={handleLoadFontForZone}
-            learningMode={learningMode}
-            onSetLearningMode={setLearningMode}
-            onLoadSample={handleLoadSample}
-            sampleInfo={sampleInfo}
-          />
-        </div>
+          }
+        />
       </div>
 
       {/* ━━━ RESIZE HANDLE ━━━ */}
@@ -595,6 +579,9 @@ const ghostBtnDark: React.CSSProperties = {
   background: 'transparent', border: '1.5px solid #2a2a2a', borderRadius: 0,
   color: 'var(--bg)', cursor: 'pointer', fontFamily: 'var(--font-mono)',
   fontSize: 11, letterSpacing: '0.12em', padding: '6px 12px',
+}
+const railLabel: React.CSSProperties = {
+  fontFamily: 'var(--font-mono)', fontSize: 10, letterSpacing: '0.14em', color: 'var(--label)', flexShrink: 0,
 }
 const ghostBtn: React.CSSProperties = {
   background: 'transparent', border: '1.5px solid var(--ink)', borderRadius: 0,
