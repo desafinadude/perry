@@ -40,6 +40,34 @@ echo 'ALL ALL=(ALL) NOPASSWD: /sbin/modprobe' | sudo tee /etc/sudoers.d/modprobe
 - Sheet music playback via MusicXML with match mode
 - Audio file player for WAV/MP3/OGG
 
+### Zone engines
+
+Each zone can play one of three engines (select with **ENGINE** in the zone row):
+
+| Engine | Description |
+| --- | --- |
+| **SF2** | SoundFont preset from a loaded `.sf2`/`.sf3` (original behaviour) |
+| **SYNTH** | Built-in subtractive synth: 2 oscillators + noise, filter with envelope, ADSR amp, LFO vibrato — editable via the **SYNTH** panel |
+| **SAMPLE** | Load a WAV/MP3/OGG file, pitched across the keys around a root note, with loop / one-shot modes and ADSR — via the **SMP** panel |
+
+### Per-channel effects
+
+The **FX** button on each zone opens an insert-effects chain for that zone's
+channel: **filter** (LP/HP/BP), **chorus**, **delay**, **reverb** and **pan**.
+Soundfont zones are tapped per MIDI channel through SpessaSynth's individual
+channel outputs, so every zone gets its own chain; synth/sampler zones get one
+chain per zone. Zones that share a SoundFont channel share one chain (they are
+one audio stream).
+
+All engine, FX and sampler settings are saved inside saved configs. Sample
+audio lives in memory for the session — re-pick the file once after a reload.
+
+### Debug hook
+
+In dev builds, `window.__perryAudio` exposes the live audio graph:
+`chains()`, `taps()`, `engines()`, `sfVoices()` and `level()` (master peak,
+proves signal end-to-end).
+
 ## Tech Stack
 
 - **React 18** + TypeScript

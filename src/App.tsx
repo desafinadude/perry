@@ -6,8 +6,9 @@ import { SheetPlayer, SheetPlayerHandle } from './components/SheetPlayer'
 import { AudioPlayer } from './components/AudioPlayer'
 import { useSynth } from './hooks/useSynth'
 import { useMidi } from './hooks/useMidi'
+import { getCachedSample } from './audio/sampler'
 import type { Zone, Preset, SavedConfig } from './types'
-import { ZONE_COLORS, PIANO_MIN, PIANO_MAX, getSavedConfigs, saveConfig, deleteConfig } from './types'
+import { ZONE_COLORS, PIANO_MIN, PIANO_MAX, getSavedConfigs, saveConfig, deleteConfig, defaultSampler } from './types'
 
 let zoneIdCounter = 1
 function makeZone(fontId: string, idx: number, overrides: Partial<Zone> = {}): Zone {
@@ -21,6 +22,7 @@ function makeZone(fontId: string, idx: number, overrides: Partial<Zone> = {}): Z
     color: ZONE_COLORS[idx % ZONE_COLORS.length],
     fontId,
     layer: 'both',
+    engine: 'soundfont',
     ...overrides,
   }
 }
@@ -44,6 +46,7 @@ export default function App() {
     loadFont, removeFont,
     applyZone, noteOn, noteOff, sendCC, sendPitchBend,
     allNotesOff, ensureAudioReady, firstMelodicPreset,
+    syncAudio, loadSampleForZone,
   } = useSynth()
 
   // Once a font loads, create default zone if none exist
@@ -102,6 +105,24 @@ export default function App() {
       zones.forEach(applyZone)
     }
   }, [status, zones, applyZone])
+
+  // Reconcile the audio graph (FX chains, engine instances, channel taps)
+  // whenever zones or fonts change — fonts re-tap after load/replace.
+  useEffect(() => {
+    syncAudio(zones)
+  }, [zones, fonts, syncAudio])
+
+  // Sample availability for sampler zones, derived from the session cache
+  // (recomputed on every zones change — after a load, fileName updates too)
+  const sampleInfo: Record<string, { loaded: boolean; duration: number | null }> = {}
+  for (const z of zones) {
+    if ((z.engine ?? 'soundfont') === 'sampler' && z.sampler?.fileName) {
+      const buf = getCachedSample(z.sampler.fileName)
+      sampleInfo[z.id] = { loaded: !!buf, duration: buf?.duration ?? null }
+    } else {
+      sampleInfo[z.id] = { loaded: false, duration: null }
+    }
+  }
 
   // MIDI handlers
   const handleNoteOn = useCallback((note: number, velocity: number) => {
@@ -172,7 +193,34 @@ export default function App() {
 
   // Zone management
   const handleZoneChange = useCallback((updated: Zone) =>
-    setZones((prev) => prev.map((z) => z.id === updated.id ? updated : z)), [])
+    setZones((prev) => prev.map((z) => {
+      if (z.id === updated.id) return updated
+      // Zones sharing a soundfont channel are literally one audio stream
+      // (one FX chain) — mirror FX edits so both rows show the same state.
+      if (
+        (z.engine ?? 'soundfont') === 'soundfont' &&
+        (updated.engine ?? 'soundfont') === 'soundfont' &&
+        z.fontId === updated.fontId && z.channel === updated.channel &&
+        updated.effects && z.effects
+      ) {
+        return { ...z, effects: updated.effects }
+      }
+      return z
+    })), [])
+
+  // Load an audio file into a sampler zone
+  const handleLoadSample = useCallback(async (zone: Zone, file: File) => {
+    try {
+      const name = await loadSampleForZone(zone.id, file)
+      handleZoneChange({
+        ...zone,
+        sampler: { ...(zone.sampler ?? defaultSampler()), fileName: name },
+      })
+    } catch (err) {
+      console.error('Failed to decode sample:', err)
+      alert(`Could not load sample "${file.name}" — unsupported or corrupt audio file.`)
+    }
+  }, [loadSampleForZone, handleZoneChange])
 
   const handleAddZone = useCallback(() => {
     setZones((prev) => {
@@ -482,6 +530,8 @@ export default function App() {
             onLoadFont={handleLoadFontForZone}
             learningMode={learningMode}
             onSetLearningMode={setLearningMode}
+            onLoadSample={handleLoadSample}
+            sampleInfo={sampleInfo}
           />
         </div>
       </div>
