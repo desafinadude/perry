@@ -6,6 +6,7 @@ import { Recorder, RecorderHandle } from './components/Recorder'
 import { SheetPlayer, SheetPlayerHandle } from './components/SheetPlayer'
 import { AudioPlayer } from './components/AudioPlayer'
 import { JamView } from './components/jam/JamView'
+import { MissingFontsDialog, type MissingFont } from './components/MissingFontsDialog'
 import { useSynth } from './hooks/useSynth'
 import { useMidi } from './hooks/useMidi'
 import { getCachedSample } from './audio/sampler'
@@ -44,7 +45,7 @@ export default function App() {
   const audioResumedRef = useRef(false)
 
   const {
-    status, loadProgress, errorMsg, fonts,
+    status, loadProgress, errorMsg, fonts, restoring,
     loadFont, removeFont,
     applyZone, noteOn, noteOff, sendCC, sendPitchBend,
     allNotesOff, ensureAudioReady, firstMelodicPreset,
@@ -84,6 +85,22 @@ export default function App() {
       return { ...z, bank: first.bank, program: first.program, drums: first.isDrum }
     }))
   }, [presetsByFont, fonts])
+
+  // A zone whose font id is gone picks up a loaded font with the same file name
+  useEffect(() => {
+    if (fonts.length === 0) return
+    setZones((prev) => {
+      let changed = false
+      const next = prev.map((z) => {
+        if ((z.engine ?? 'soundfont') !== 'soundfont' || fonts.some((f) => f.id === z.fontId) || !z.fontName) return z
+        const match = fonts.find((f) => f.name === z.fontName)
+        if (!match) return z
+        changed = true
+        return { ...z, fontId: match.id }
+      })
+      return changed ? next : prev
+    })
+  }, [fonts])
 
   // Sync zones to synth on change
   const prevZonesRef = useRef<Zone[]>([])
@@ -282,15 +299,50 @@ export default function App() {
   // Save / load configs
   const handleSave = useCallback(() => {
     const name = saveInput.trim() || `Config ${savedConfigs.length + 1}`
-    setSavedConfigs(saveConfig(name, zones))
+    // record font names so a config can find its fonts again after a reload
+    const named = zones.map((z) => ({ ...z, fontName: fonts.find((f) => f.id === z.fontId)?.name ?? z.fontName }))
+    setSavedConfigs(saveConfig(name, named))
     setSaveInput('')
-  }, [saveInput, savedConfigs.length, zones])
+  }, [saveInput, savedConfigs.length, zones, fonts])
+
+  // After loading a config, ask for any SoundFonts its zones need that aren't loaded
+  const [fontPrompt, setFontPrompt] = useState<string | null>(null)
+  const missingFonts = useMemo<MissingFont[]>(() => {
+    const out = new Map<string, MissingFont>()
+    for (const z of zones) {
+      if ((z.engine ?? 'soundfont') !== 'soundfont' || fonts.some((f) => f.id === z.fontId)) continue
+      const m = out.get(z.fontId) ?? { id: z.fontId, name: z.fontName ?? null, zones: [] }
+      m.zones.push(z.name)
+      out.set(z.fontId, m)
+    }
+    return [...out.values()]
+  }, [zones, fonts])
+  useEffect(() => {
+    if (fontPrompt && !restoring && missingFonts.length === 0) setFontPrompt(null)
+  }, [fontPrompt, restoring, missingFonts.length])
 
   const handleLoad = useCallback((cfg: SavedConfig) => {
     allNotesOff(); setActiveNotes(new Set())
-    setZones(cfg.zones.map((z) => ({ ...z, id: String(zoneIdCounter++) })))
+    // Keep zone ids stable (the JAM band remembers zones by id); only renumber
+    // duplicates. Re-point zones whose font id is gone to a font with the same name.
+    const seen = new Set<string>()
+    const loaded = cfg.zones.map((z) => {
+      let id = z.id
+      if (!id || seen.has(id)) id = String(zoneIdCounter++)
+      seen.add(id)
+      let fontId = z.fontId
+      if (!fonts.some((f) => f.id === fontId) && z.fontName) {
+        const match = fonts.find((f) => f.name === z.fontName)
+        if (match) fontId = match.id
+      }
+      return { ...z, id, fontId }
+    })
+    const maxId = Math.max(0, ...loaded.map((z) => Number(z.id)).filter(Number.isFinite))
+    zoneIdCounter = Math.max(zoneIdCounter, maxId + 1)
+    setZones(loaded)
     setShowSaved(false)
-  }, [allNotesOff])
+    setFontPrompt(cfg.name)
+  }, [allNotesOff, fonts])
 
   const handleDelete = useCallback((id: string) => setSavedConfigs(deleteConfig(id)), [])
 
@@ -436,6 +488,16 @@ export default function App() {
       </header>
 
   {/* Settings modal removed/hid per request */}
+
+      {fontPrompt && (restoring || missingFonts.length > 0) && (
+        <MissingFontsDialog
+          configName={fontPrompt}
+          missing={missingFonts}
+          restoring={restoring}
+          onLoad={handleLoadFontForZone}
+          onClose={() => setFontPrompt(null)}
+        />
+      )}
 
       {/* ━━━ SHEET PLAYER TAB ━━━ */}
       <div style={{ display: activeTab === 'sheet' ? 'flex' : 'none', flex: 1, flexDirection: 'column', overflow: 'hidden', minHeight: 0 }}>

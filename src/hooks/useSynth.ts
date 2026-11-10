@@ -4,6 +4,7 @@ import { DEFAULT_EFFECTS, defaultEffects, defaultSynth, defaultSampler } from '.
 import { EffectsChain } from '../audio/effectsChain'
 import { SubtractiveSynth } from '../audio/subtractiveSynth'
 import { Sampler, cacheSample } from '../audio/sampler'
+import { deleteFont, listFonts, listSamples, saveFont, saveSample } from '../audio/assetStore'
 
 type InitStatus = 'idle' | 'loading' | 'ready' | 'error'
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -44,6 +45,9 @@ export function useSynth() {
   const [errorMsg, setErrorMsg] = useState('')
   const [fonts, setFonts] = useState<LoadedFont[]>([])
   const [isLoadingDefault, setIsLoadingDefault] = useState(false)
+  /** Bumps when saved fonts/samples finish restoring, so the UI re-reads them. */
+  const [assetsTick, setAssetsTick] = useState(0)
+  const [restoring, setRestoring] = useState(true)
 
   const audioCtxRef = useRef<AudioContext | null>(null)
   // Map fontId → WorkletSynthesizer instance
@@ -194,8 +198,11 @@ export function useSynth() {
     buffer: ArrayBuffer,
     name: string,
     replaceId?: string,   // if set, replaces that font slot; otherwise adds new
+    persist = true,       // keep a copy in IndexedDB so it survives a refresh
   ): Promise<string> => {
     const fontId = replaceId ?? ('font_' + Date.now())
+    // copy before the worklet takes the buffer
+    if (persist && fontId !== 'main') void saveFont({ id: fontId, name, data: buffer.slice(0), addedAt: Date.now() })
 
     // Destroy old synth for this slot
     if (synthMapRef.current.has(fontId)) {
@@ -212,11 +219,15 @@ export function useSynth() {
         : [...prev, font]  // Add new
       return newFonts
     })
+    // any working font makes the synth usable, even if default.sf2 failed
+    setStatus('ready')
+    setErrorMsg('')
     return fontId
   }, [createFontSynth])
 
   const removeFont = useCallback((fontId: string) => {
     if (fontId === 'main') return // can't remove the main font
+    void deleteFont(fontId)
     try { synthMapRef.current.get(fontId)?.destroy?.() } catch {}
     synthMapRef.current.delete(fontId)
     setFonts((prev) => prev.filter((f) => f.id !== fontId))
@@ -233,6 +244,8 @@ export function useSynth() {
     fetch('/sf2/default.sf2')
       .then(res => {
         if (!res.ok) throw new Error(`HTTP ${res.status}: ${res.statusText}`)
+        // dev servers answer a missing file with index.html — don't feed that to the synth
+        if ((res.headers.get('content-type') ?? '').includes('text/html')) throw new Error('default.sf2 not found')
         return res.arrayBuffer()
       })
       .then(buffer => {
@@ -251,6 +264,25 @@ export function useSynth() {
       .finally(() => {
         setIsLoadingDefault(false)
       })
+
+    // Restore SoundFonts and samples loaded in earlier sessions, under their
+    // original ids so saved zones and configs find them again. Runs alongside
+    // the default font so a slow or missing default.sf2 can't hold it up.
+    ;(async () => {
+      for (const f of await listFonts()) {
+        try { await loadFont(f.data, f.name, f.id, false) } catch (e) { console.warn('Could not restore font', f.name, e) }
+      }
+      const samples = await listSamples()
+      if (samples.length) {
+        const ctx = audioCtxRef.current ?? getCtx()
+        for (const x of samples) {
+          try { cacheSample(x.name, await ctx.decodeAudioData(x.data.slice(0))) } catch { /* undecodable */ }
+        }
+        samplerEnginesRef.current.forEach((e) => e.reloadFromCache())
+      }
+      setRestoring(false)
+      setAssetsTick((t) => t + 1)
+    })()
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
@@ -517,6 +549,7 @@ export function useSynth() {
       try { await ctx.resume() } catch { /* gesture will resume later */ }
     }
     const data = await file.arrayBuffer()
+    void saveSample({ name: file.name, data: data.slice(0), addedAt: Date.now() })
     const buffer = await ctx.decodeAudioData(data)
     cacheSample(file.name, buffer)
     samplerEnginesRef.current.get(zoneId)?.setBuffer(buffer)
@@ -561,7 +594,7 @@ export function useSynth() {
   }, [])
 
   return {
-    status, loadProgress, errorMsg, fonts,
+    status, loadProgress, errorMsg, fonts, restoring, assetsTick,
     loadFont, removeFont,
     applyZone, noteOn, noteOff, sendCC, sendPitchBend,
     allNotesOff,
