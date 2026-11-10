@@ -315,6 +315,42 @@ export function useSynth() {
     synth.noteOff(zone.channel, note)
   }, [])
 
+  /**
+   * Play a note on a zone at an exact audio-clock time for a fixed length.
+   * Used by the jam band's look-ahead scheduler: soundfont zones use the
+   * worklet's timed events, synth/sampler zones create timed voices.
+   */
+  const scheduleNote = useCallback((zone: Zone, note: number, velocity: number, when: number, duration: number) => {
+    const engine = engineOf(zone)
+    if (engine === 'synth') { synthEnginesRef.current.get(zone.id)?.playNote(note, velocity, when, duration); return }
+    if (engine === 'sampler') { samplerEnginesRef.current.get(zone.id)?.playNote(note, velocity, when, duration); return }
+    const synth = synthMapRef.current.get(zone.fontId)
+    if (!synth) return
+    synth.noteOn(zone.channel, note, velocity, { time: when })
+    synth.noteOff(zone.channel, note, { time: when + duration })
+  }, [])
+
+  /** Silence anything the jam band scheduled on these zones. */
+  const stopScheduled = useCallback((zones: Zone[]) => {
+    synthEnginesRef.current.forEach((e) => e.stopScheduled())
+    samplerEnginesRef.current.forEach((e) => e.stopScheduled())
+    const seen = new Set<string>()
+    zones.forEach((z) => {
+      if (engineOf(z) !== 'soundfont') return
+      const key = `${z.fontId}:${z.channel}`
+      if (seen.has(key)) return
+      seen.add(key)
+      const synth = synthMapRef.current.get(z.fontId)
+      synth?.controllerChange(z.channel, 123, 0)
+    })
+  }, [])
+
+  /** The shared AudioContext and master bus (created on demand). */
+  const getAudio = useCallback(() => {
+    const ctx = audioCtxRef.current ?? getCtx()
+    return { ctx, master: getMaster(ctx) }
+  }, [getCtx, getMaster])
+
   const sendCC = useCallback((zones: Zone[], cc: number, value: number) => {
     // Sustain pedal also holds synth/sampler voices
     if (cc === 64) {
@@ -527,5 +563,6 @@ export function useSynth() {
     ensureAudioReady,
     firstMelodicPreset,
     syncAudio, loadSampleForZone, getZoneAnalyser,
+    scheduleNote, stopScheduled, getAudio,
   }
 }

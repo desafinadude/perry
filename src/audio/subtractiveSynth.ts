@@ -48,6 +48,8 @@ export class SubtractiveSynth {
   private readonly ctx: AudioContext
   private settings: SynthSettings
   private readonly voices = new Map<number, Voice>()
+  /** Fire-and-forget voices from playNote() (jam band). */
+  private readonly scheduled = new Set<Voice>()
   private readonly sustained = new Set<number>()
   private sustainPedal = false
   private volume = 1
@@ -80,7 +82,8 @@ export class SubtractiveSynth {
     this.lfoDepth.gain.setTargetAtTime(s.lfoDepth, now, 0.02)
     const t = 0.02
     const cutoff = Math.max(20, Math.min(18000, s.cutoff))
-    for (const v of this.voices.values()) {
+    for (const v of [...this.voices.values(), ...this.scheduled]) {
+      const live = this.voices.get(v.note) === v
       if (v.osc1.type !== s.osc1.wave) v.osc1.type = s.osc1.wave
       if (v.osc2.type !== s.osc2.wave) v.osc2.type = s.osc2.wave
       v.osc1.frequency.setTargetAtTime(v.freq * Math.pow(2, s.osc1.octave), now, t)
@@ -93,10 +96,11 @@ export class SubtractiveSynth {
       if (v.filter.type !== s.filterType) v.filter.type = s.filterType
       v.filter.Q.setTargetAtTime(s.resonance, now, t)
       // drop any running filter-envelope sweep and glide to the new cutoff
+      if (!live && now < v.startedAt) continue
       v.filter.frequency.cancelScheduledValues(now)
       v.filter.frequency.setTargetAtTime(cutoff, now, t)
       // sustain level follows once the voice is past attack + decay
-      if (now >= v.startedAt + s.ampAttack + s.ampDecay) {
+      if (live && now >= v.startedAt + s.ampAttack + s.ampDecay) {
         const sus = Math.max(0, Math.min(1, s.ampSustain)) * v.peak
         v.vca.gain.cancelScheduledValues(now)
         v.vca.gain.setTargetAtTime(sus, now, t)
@@ -116,9 +120,56 @@ export class SubtractiveSynth {
     this.sustained.delete(note)
     this.noteOffInternal(note, true) // retrigger: silence previous voice fast
 
+    const voice = this.buildVoice(note, velocity, this.ctx.currentTime)
+    this.voices.set(note, voice)
+
+    // voice stealing — oldest gets a fast fade-out
+    if (this.voices.size > MAX_VOICES) {
+      let oldest: Voice | null = null
+      for (const v of this.voices.values()) {
+        if (!oldest || v.startedAt < oldest.startedAt) oldest = v
+      }
+      if (oldest && oldest.note !== note) this.noteOffInternal(oldest.note, false, 0.05)
+    }
+  }
+
+  /**
+   * Play a note at an exact audio-clock time for a fixed length — used by the
+   * jam band's look-ahead scheduler. Scheduled voices are independent of the
+   * live keyboard voices (the same pitch can overlap) and clean themselves up.
+   */
+  playNote(note: number, velocity: number, when: number, duration: number): void {
+    if (this.disposed) return
+    const start = Math.max(when, this.ctx.currentTime)
+    const v = this.buildVoice(note, velocity, start, start + Math.max(0.02, duration))
+    this.scheduled.add(v)
+    if (this.scheduled.size > MAX_VOICES * 2) {
+      const first = this.scheduled.values().next().value
+      if (first) this.releaseScheduled(first, 0.03)
+    }
+  }
+
+  /** Fade out every scheduled (jam) voice. */
+  stopScheduled(): void {
+    for (const v of [...this.scheduled]) this.releaseScheduled(v, 0.05)
+  }
+
+  private releaseScheduled(v: Voice, rel: number): void {
+    this.scheduled.delete(v)
+    const now = this.ctx.currentTime
+    try {
+      v.vca.gain.cancelScheduledValues(now)
+      v.vca.gain.setValueAtTime(v.vca.gain.value, now)
+      v.vca.gain.linearRampToValueAtTime(0, now + rel)
+      v.osc1.stop(now + rel + 0.05)
+      v.osc2.stop(now + rel + 0.05)
+      v.noise.stop(now + rel + 0.05)
+    } catch { /* already stopped */ }
+  }
+
+  private buildVoice(note: number, velocity: number, now: number, endAt?: number): Voice {
     const ctx = this.ctx
     const s = this.settings
-    const now = ctx.currentTime
     const freq = mtof(note)
     const vel = Math.max(0, Math.min(1, velocity / 127))
     const peak = Math.pow(vel, 1.4) * 0.9
@@ -170,13 +221,20 @@ export class SubtractiveSynth {
     }
 
     const vca = ctx.createGain()
-    // ADSR
     const a = Math.max(0.001, s.ampAttack)
     const d = Math.max(0.001, s.ampDecay)
     const sus = Math.max(0, Math.min(1, s.ampSustain)) * peak
-    vca.gain.setValueAtTime(0, now)
-    vca.gain.linearRampToValueAtTime(peak, now + a)
-    vca.gain.linearRampToValueAtTime(sus, now + a + d)
+    const g = vca.gain
+    g.setValueAtTime(0, now)
+    if (endAt === undefined || endAt >= now + a + d) {
+      g.linearRampToValueAtTime(peak, now + a)
+      g.linearRampToValueAtTime(sus, now + a + d)
+    } else if (endAt <= now + a) {
+      g.linearRampToValueAtTime(peak * ((endAt - now) / a), endAt)
+    } else {
+      g.linearRampToValueAtTime(peak, now + a)
+      g.linearRampToValueAtTime(peak + (sus - peak) * ((endAt - now - a) / d), endAt)
+    }
 
     mix.connect(filter)
     filter.connect(vca)
@@ -186,16 +244,17 @@ export class SubtractiveSynth {
     osc2.start(now)
 
     const voice: Voice = { note, osc1, osc2, noise, g1, g2, ng, mix, filter, vca, freq, peak, startedAt: now }
-    this.voices.set(note, voice)
 
-    // voice stealing — oldest gets a fast fade-out
-    if (this.voices.size > MAX_VOICES) {
-      let oldest: Voice | null = null
-      for (const v of this.voices.values()) {
-        if (!oldest || v.startedAt < oldest.startedAt) oldest = v
-      }
-      if (oldest && oldest.note !== note) this.noteOffInternal(oldest.note, false, 0.05)
+    if (endAt !== undefined) {
+      const rel = Math.max(0.01, s.ampRelease)
+      g.setTargetAtTime(0, endAt, rel / 4)
+      const stopAt = endAt + rel + 0.1
+      osc1.stop(stopAt)
+      osc2.stop(stopAt)
+      noise.stop(stopAt)
+      osc1.onended = () => { this.scheduled.delete(voice); this.destroyVoice(voice) }
     }
+    return voice
   }
 
   noteOff(note: number): void {
@@ -268,6 +327,7 @@ export class SubtractiveSynth {
     this.sustainPedal = false
     this.sustained.clear()
     for (const note of [...this.voices.keys()]) this.noteOffInternal(note, false, 0.08)
+    this.stopScheduled()
   }
 
   /** Hard cut — used for panic paths (zone removal, config switch). */
@@ -284,6 +344,11 @@ export class SubtractiveSynth {
       this.destroyVoice(v)
     }
     this.voices.clear()
+    for (const v of [...this.scheduled]) {
+      try { v.osc1.stop(); v.osc2.stop(); v.noise.stop() } catch { /* already stopped */ }
+      this.destroyVoice(v)
+    }
+    this.scheduled.clear()
     this.sustained.clear()
     this.sustainPedal = false
   }
