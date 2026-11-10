@@ -24,7 +24,12 @@ interface Props {
   active: boolean
   scheduleNote: (zone: Zone, note: number, velocity: number, when: number, duration: number) => void
   stopScheduled: (zones: Zone[]) => void
-  getAudio: () => { ctx: AudioContext; master: GainNode }
+  /** Mixer strips for the band's built-in parts. */
+  getJamOutputs: () => { ctx: AudioContext; drums: AudioNode; bass: AudioNode; keys: AudioNode; click: AudioNode }
+  /** Tells the app the current tempo (tempo-synced delay). */
+  onTempo?: (bpm: number) => void
+  /** Tells the app which band parts play built-in sounds (mixer strips). */
+  onBuiltinUse?: (used: Record<'drums' | 'bass' | 'keys', boolean>) => void
 }
 
 interface BandPrefs {
@@ -52,7 +57,7 @@ const TRACK_NAMES: Record<Track, string> = { drums: 'DRUMS', bass: 'BASS', comp:
 
 const keyLabel = (k: string) => k.replace('b', '♭').replace('#', '♯').replace('-', '–')
 
-export function JamView({ zones, active, scheduleNote, stopScheduled, getAudio }: Props) {
+export function JamView({ zones, active, scheduleNote, stopScheduled, getJamOutputs, onTempo, onBuiltinUse }: Props) {
   // ── library ──
   const [charts, setCharts] = useState<Chart[]>(() => [...builtInCharts(), ...loadUserCharts()])
   const [prefs, setPrefs] = useState<BandPrefs>(() => {
@@ -111,8 +116,8 @@ export function JamView({ zones, active, scheduleNote, stopScheduled, getAudio }
 
   const ensurePlayer = useCallback(() => {
     if (playerRef.current) return playerRef.current
-    const { ctx, master } = getAudio()
-    const band = new BuiltinBand(ctx, master)
+    const { ctx, ...outs } = getJamOutputs()
+    const band = new BuiltinBand(ctx, outs)
     const p = new JamPlayer({
       ctx, band,
       playZone: (zoneId, midi, vel, when, dur) => {
@@ -126,7 +131,7 @@ export function JamView({ zones, active, scheduleNote, stopScheduled, getAudio }
     p.onEnd = () => setPlaying(false)
     playerRef.current = p
     return p
-  }, [getAudio, scheduleNote, stopScheduled, settings])
+  }, [getJamOutputs, scheduleNote, stopScheduled, settings])
 
   useEffect(() => { playerRef.current?.setSettings(settings) }, [settings])
   useEffect(() => { playerRef.current?.setChart(chart) }, [chart])
@@ -174,6 +179,12 @@ export function JamView({ zones, active, scheduleNote, stopScheduled, getAudio }
     loopFn()
     return () => cancelAnimationFrame(raf)
   }, [playing])
+
+  const liveBpm = playing ? pos.bpm : bpm
+  const usesBuiltin = (t: Track) => prefs.tracks[t].zoneId === 'builtin' || !zones.some((z) => z.id === prefs.tracks[t].zoneId)
+  const bd = usesBuiltin('drums'), bb = usesBuiltin('bass'), bk = usesBuiltin('comp')
+  useEffect(() => { onBuiltinUse?.({ drums: bd, bass: bb, keys: bk }) }, [bd, bb, bk, onBuiltinUse])
+  useEffect(() => { onTempo?.(liveBpm) }, [liveBpm, onTempo])
 
   // ── keyboard shortcut: space = play/stop ──
   useEffect(() => {

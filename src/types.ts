@@ -37,8 +37,10 @@ export interface Zone {
   layer?: 'input' | 'playback' | 'both'
   /** Which engine plays this zone. Defaults to 'soundfont'. */
   engine?: ZoneEngine
-  /** Per-channel insert effects (applies to every engine). */
+  /** Legacy per-zone insert effects; migrated to `mix` (see mixer/model.ts). */
   effects?: EffectSettings
+  /** Mixer strip settings: fader, pan, EQ, filter, sends. */
+  mix?: import('./mixer/model').ChannelMix
   /** Subtractive synth patch (used when engine === 'synth'). */
   synth?: SynthSettings
   /** Sampler mapping (used when engine === 'sampler'). */
@@ -148,6 +150,8 @@ export interface SavedConfig {
   name: string
   zones: Zone[]
   createdAt: number
+  /** Buses, master and JAM-band strips at the time of saving. */
+  mixer?: import('./mixer/model').MixerSettings
 }
 
 export const ZONE_COLORS = [
@@ -199,8 +203,8 @@ const STORAGE_KEY = 'perry_configs'
 export const getSavedConfigs = (): SavedConfig[] => {
   try { return JSON.parse(localStorage.getItem(STORAGE_KEY) || '[]') } catch { return [] }
 }
-export const saveConfig = (name: string, zones: Zone[]): SavedConfig[] => {
-  const updated = [...getSavedConfigs(), { id: Date.now().toString(), name, zones, createdAt: Date.now() }]
+export const saveConfig = (name: string, zones: Zone[], mixer?: SavedConfig['mixer']): SavedConfig[] => {
+  const updated = [...getSavedConfigs(), { id: Date.now().toString(), name, zones, createdAt: Date.now(), ...(mixer ? { mixer } : {}) }]
   localStorage.setItem(STORAGE_KEY, JSON.stringify(updated))
   return updated
 }

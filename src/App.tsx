@@ -7,6 +7,8 @@ import { SheetPlayer, SheetPlayerHandle } from './components/SheetPlayer'
 import { AudioPlayer } from './components/AudioPlayer'
 import { JamView } from './components/jam/JamView'
 import { MissingFontsDialog, type MissingFont } from './components/MissingFontsDialog'
+import { MixerView } from './components/mixer/MixerView'
+import { normaliseMixer, type ChannelMix, type MixerSettings } from './mixer/model'
 import { useSynth } from './hooks/useSynth'
 import { useMidi } from './hooks/useMidi'
 import { getCachedSample } from './audio/sampler'
@@ -38,7 +40,15 @@ export default function App() {
   const [showSaved, setShowSaved] = useState(false)
   const [recorderHeight, setRecorderHeight] = useState(180)
   const [learningMode, setLearningMode] = useState<LearningMode>(null)
-  const [activeTab, setActiveTab] = useState<'zones' | 'sheet' | 'audio' | 'jam'>('zones')
+  const [activeTab, setActiveTab] = useState<'zones' | 'sheet' | 'audio' | 'jam' | 'mixer'>('zones')
+
+  // ── Mixer: buses, master, JAM strips (zones carry their own strips) ──
+  const [mixer, setMixer] = useState<MixerSettings>(() => {
+    try { return normaliseMixer(JSON.parse(localStorage.getItem('perry.mixer.v1') ?? 'null')) } catch { return normaliseMixer(null) }
+  })
+  useEffect(() => { try { localStorage.setItem('perry.mixer.v1', JSON.stringify(mixer)) } catch { /* storage blocked */ } }, [mixer])
+  const [jamBpm, setJamBpm] = useState(120)
+  const [jamBuiltin, setJamBuiltin] = useState<Record<'drums' | 'bass' | 'keys', boolean>>({ drums: true, bass: true, keys: true })
 
   const recorderRef = useRef<RecorderHandle>(null)
   const sheetPlayerRef = useRef<SheetPlayerHandle>(null)
@@ -50,7 +60,8 @@ export default function App() {
     applyZone, noteOn, noteOff, sendCC, sendPitchBend,
     allNotesOff, ensureAudioReady, firstMelodicPreset,
     syncAudio, loadSampleForZone, getZoneAnalyser,
-    scheduleNote, stopScheduled, getAudio,
+    scheduleNote, stopScheduled,
+    syncMixer, getJamOutputs, readMeters, chainKeyFor,
   } = useSynth()
 
   // Once a font loads, create default zone if none exist
@@ -125,6 +136,13 @@ export default function App() {
       zones.forEach(applyZone)
     }
   }, [status, zones, applyZone])
+
+  useEffect(() => { syncMixer(mixer, jamBpm) }, [mixer, jamBpm, syncMixer])
+
+  /** Mixer strip edit for every zone sharing one audio stream. */
+  const handleZoneMix = useCallback((key: string, mix: ChannelMix) => {
+    setZones((prev) => prev.map((z) => (chainKeyFor(z) === key ? { ...z, mix, effects: undefined } : z)))
+  }, [chainKeyFor])
 
   // Reconcile the audio graph (FX chains, engine instances, channel taps)
   // whenever zones or fonts change — fonts re-tap after load/replace.
@@ -224,9 +242,9 @@ export default function App() {
         (z.engine ?? 'soundfont') === 'soundfont' &&
         (updated.engine ?? 'soundfont') === 'soundfont' &&
         z.fontId === updated.fontId && z.channel === updated.channel &&
-        updated.effects && z.effects
+        updated.mix
       ) {
-        return { ...z, effects: updated.effects }
+        return { ...z, mix: updated.mix, effects: undefined }
       }
       return z
     })), [])
@@ -301,9 +319,9 @@ export default function App() {
     const name = saveInput.trim() || `Config ${savedConfigs.length + 1}`
     // record font names so a config can find its fonts again after a reload
     const named = zones.map((z) => ({ ...z, fontName: fonts.find((f) => f.id === z.fontId)?.name ?? z.fontName }))
-    setSavedConfigs(saveConfig(name, named))
+    setSavedConfigs(saveConfig(name, named, mixer))
     setSaveInput('')
-  }, [saveInput, savedConfigs.length, zones, fonts])
+  }, [saveInput, savedConfigs.length, zones, fonts, mixer])
 
   // After loading a config, ask for any SoundFonts its zones need that aren't loaded
   const [fontPrompt, setFontPrompt] = useState<string | null>(null)
@@ -340,6 +358,7 @@ export default function App() {
     const maxId = Math.max(0, ...loaded.map((z) => Number(z.id)).filter(Number.isFinite))
     zoneIdCounter = Math.max(zoneIdCounter, maxId + 1)
     setZones(loaded)
+    if (cfg.mixer) setMixer(normaliseMixer(cfg.mixer))
     setShowSaved(false)
     setFontPrompt(cfg.name)
   }, [allNotesOff, fonts])
@@ -407,6 +426,12 @@ export default function App() {
             onClick={() => setActiveTab('jam')}
           >
             JAM
+          </button>
+          <button
+            className={`mode-tab${activeTab === 'mixer' ? ' active' : ''}`}
+            onClick={() => setActiveTab('mixer')}
+          >
+            MIXER
           </button>
         </div>
 
@@ -522,7 +547,24 @@ export default function App() {
           active={activeTab === 'jam'}
           scheduleNote={scheduleNote}
           stopScheduled={stopScheduled}
-          getAudio={getAudio}
+          getJamOutputs={getJamOutputs}
+          onTempo={setJamBpm}
+          onBuiltinUse={setJamBuiltin}
+        />
+      </div>
+
+      {/* ━━━ MIXER TAB ━━━ */}
+      <div style={{ display: activeTab === 'mixer' ? 'flex' : 'none', flex: 1, flexDirection: 'column', overflow: 'hidden', minHeight: 0 }}>
+        <MixerView
+          zones={zones}
+          mixer={mixer}
+          onMixer={setMixer}
+          onZoneMix={handleZoneMix}
+          chainKeyFor={chainKeyFor}
+          readMeters={readMeters}
+          active={activeTab === 'mixer'}
+          bpm={jamBpm}
+          jamBuiltin={jamBuiltin}
         />
       </div>
 
@@ -541,6 +583,7 @@ export default function App() {
       {/* ━━━ ZONES: rail + selected-zone faceplate ━━━ */}
       <div style={{ flex: 1, display: 'flex', minHeight: 0, overflow: 'hidden' }}>
         <ZoneEditor
+          onOpenMixer={() => setActiveTab('mixer')}
           zones={zones}
           fonts={fonts}
           presetsByFont={presetsByFont}

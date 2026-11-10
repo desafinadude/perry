@@ -21,6 +21,8 @@ export interface KnobProps {
   dimmed?: boolean
   /** Double-click resets to this value. */
   defaultValue?: number
+  /** Narrow layout for mixer strips (no minimum width, small type). */
+  compact?: boolean
 }
 
 const SWEEP = 270
@@ -34,7 +36,7 @@ const DRAG_PX = 200 // vertical px for the full range
  */
 export function Knob({
   label, value, min, max, step, curve = 'lin', onChange, display,
-  size = 56, bipolar = false, dimmed = false, defaultValue,
+  size = 56, bipolar = false, dimmed = false, defaultValue, compact = false,
 }: KnobProps) {
   const isLog = curve === 'log'
   const safeMin = Math.max(min, 1e-6)
@@ -104,7 +106,7 @@ export function Knob({
   const ptr = dimmed ? '#9A978E' : 'var(--ink)'
 
   return (
-    <div style={{ ...wrap, width: Math.max(size + 4, 60) }}>
+    <div style={{ ...wrap, width: compact ? size + 6 : Math.max(size + 4, 60) }} title={compact ? `${label} ${readout}` : undefined}>
       <div
         role="slider"
         tabIndex={0}
@@ -131,8 +133,8 @@ export function Knob({
           <line x1={50} y1={50} x2={50} y2={22} stroke={ptr} strokeWidth={5} transform={`rotate(${ang} 50 50)`} />
         </svg>
       </div>
-      <span style={labelStyle}>{label}</span>
-      <span style={{ ...valueStyle, color: dimmed ? '#6E6C64' : 'var(--ink)' }}>{readout}</span>
+      <span style={compact ? { ...labelStyle, fontSize: 8, letterSpacing: '0.08em' } : labelStyle}>{label}</span>
+      {!compact && <span style={{ ...valueStyle, color: dimmed ? '#6E6C64' : 'var(--ink)' }}>{readout}</span>}
     </div>
   )
 }
