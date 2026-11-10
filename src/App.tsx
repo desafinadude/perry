@@ -6,6 +6,7 @@ import { Recorder, RecorderHandle } from './components/Recorder'
 import { SheetPlayer, SheetPlayerHandle } from './components/SheetPlayer'
 import { AudioPlayer } from './components/AudioPlayer'
 import { JamView } from './components/jam/JamView'
+import { MissingFontsDialog, type MissingFont } from './components/MissingFontsDialog'
 import { useSynth } from './hooks/useSynth'
 import { useMidi } from './hooks/useMidi'
 import { getCachedSample } from './audio/sampler'
@@ -44,7 +45,7 @@ export default function App() {
   const audioResumedRef = useRef(false)
 
   const {
-    status, loadProgress, errorMsg, fonts,
+    status, loadProgress, errorMsg, fonts, restoring,
     loadFont, removeFont,
     applyZone, noteOn, noteOff, sendCC, sendPitchBend,
     allNotesOff, ensureAudioReady, firstMelodicPreset,
@@ -304,6 +305,22 @@ export default function App() {
     setSaveInput('')
   }, [saveInput, savedConfigs.length, zones, fonts])
 
+  // After loading a config, ask for any SoundFonts its zones need that aren't loaded
+  const [fontPrompt, setFontPrompt] = useState<string | null>(null)
+  const missingFonts = useMemo<MissingFont[]>(() => {
+    const out = new Map<string, MissingFont>()
+    for (const z of zones) {
+      if ((z.engine ?? 'soundfont') !== 'soundfont' || fonts.some((f) => f.id === z.fontId)) continue
+      const m = out.get(z.fontId) ?? { id: z.fontId, name: z.fontName ?? null, zones: [] }
+      m.zones.push(z.name)
+      out.set(z.fontId, m)
+    }
+    return [...out.values()]
+  }, [zones, fonts])
+  useEffect(() => {
+    if (fontPrompt && !restoring && missingFonts.length === 0) setFontPrompt(null)
+  }, [fontPrompt, restoring, missingFonts.length])
+
   const handleLoad = useCallback((cfg: SavedConfig) => {
     allNotesOff(); setActiveNotes(new Set())
     // Keep zone ids stable (the JAM band remembers zones by id); only renumber
@@ -324,6 +341,7 @@ export default function App() {
     zoneIdCounter = Math.max(zoneIdCounter, maxId + 1)
     setZones(loaded)
     setShowSaved(false)
+    setFontPrompt(cfg.name)
   }, [allNotesOff, fonts])
 
   const handleDelete = useCallback((id: string) => setSavedConfigs(deleteConfig(id)), [])
@@ -470,6 +488,16 @@ export default function App() {
       </header>
 
   {/* Settings modal removed/hid per request */}
+
+      {fontPrompt && (restoring || missingFonts.length > 0) && (
+        <MissingFontsDialog
+          configName={fontPrompt}
+          missing={missingFonts}
+          restoring={restoring}
+          onLoad={handleLoadFontForZone}
+          onClose={() => setFontPrompt(null)}
+        />
+      )}
 
       {/* ━━━ SHEET PLAYER TAB ━━━ */}
       <div style={{ display: activeTab === 'sheet' ? 'flex' : 'none', flex: 1, flexDirection: 'column', overflow: 'hidden', minHeight: 0 }}>
