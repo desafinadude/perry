@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import type { CSSProperties, ReactNode } from 'react'
 import type { Zone, Preset, LoadedFont, ZoneEngine } from '../types'
-import { noteName, ZONE_COLORS, defaultEffects, defaultSynth, defaultSampler } from '../types'
+import { noteName, presetKey, ZONE_COLORS, defaultEffects, defaultSynth, defaultSampler } from '../types'
 import { getCachedSample } from '../audio/sampler'
 import { EffectsPanel } from './EffectsPanel'
 import { SynthPanel } from './SynthPanel'
@@ -101,7 +101,7 @@ function ZoneCard({ zone, selected, onSelect, presets }: { zone: Zone; selected:
   const engine = zone.engine ?? 'soundfont'
   const source = engine === 'synth' ? 'SYNTH PATCH'
     : engine === 'sampler' ? (zone.sampler?.fileName?.toUpperCase() || 'NO SAMPLE')
-    : (presets.find((p) => p.bank === zone.bank && p.program === zone.program)?.name.toUpperCase() ?? `PROGRAM ${zone.program + 1}`)
+    : (presets.find((p) => presetKey(p) === presetKey(zone))?.name.toUpperCase() ?? `PROGRAM ${zone.program + 1}`)
   const tag = engine === 'soundfont' ? 'SF2' : engine === 'synth' ? 'SYNTH' : 'SAMPLE'
   return (
     <button onClick={onSelect} aria-current={selected} style={{ ...card, background: selected ? 'var(--bg)' : 'transparent' }}>
@@ -227,17 +227,17 @@ function ZoneDetail({
           <Module title="PRESET" style={{ gridColumn: 'span 2', borderRight: '1px solid var(--border)' }}>
             <select
               aria-label="Preset"
-              value={`${zone.bank}:${zone.program}`}
+              value={presetKey(zone)}
               onChange={(e) => {
-                const [bank, program] = e.target.value.split(':').map(Number)
-                onChange({ ...zone, bank, program })
+                const p = presets.find((x) => presetKey(x) === e.target.value)
+                if (p) onChange({ ...zone, bank: p.bank, program: p.program, drums: p.isDrum })
               }}
               style={{ ...bigSelect, width: '100%' }}
             >
               {presets.length === 0
-                ? <option value={`${zone.bank}:${zone.program}`}>— load a soundfont —</option>
+                ? <option value={presetKey(zone)}>— load a soundfont —</option>
                 : presets.map((p) => (
-                  <option key={`${p.bank}:${p.program}`} value={`${p.bank}:${p.program}`}>
+                  <option key={presetKey(p)} value={presetKey(p)}>
                     {p.isDrum ? '[DRUMS] ' : ''}{p.bank > 0 ? `[B${p.bank}] ` : ''}{p.program + 1}. {p.name}
                   </option>
                 ))}
@@ -252,7 +252,7 @@ function ZoneDetail({
                   const fontId = e.target.value
                   const ps = presetsByFont[fontId] ?? []
                   const first = ps.find((p) => !p.isDrum) ?? ps[0]
-                  onChange({ ...zone, fontId, bank: first?.bank ?? 0, program: first?.program ?? 0 })
+                  onChange({ ...zone, fontId, bank: first?.bank ?? 0, program: first?.program ?? 0, drums: first?.isDrum ?? false })
                 }}
                 style={{ ...bigSelect, flex: 1, minWidth: 0 }}
               >
