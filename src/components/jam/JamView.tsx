@@ -13,7 +13,7 @@ import { BuiltinBand } from '../../jam/builtin'
 import { builtInCharts, loadBandPrefs, loadUserCharts, saveBandPrefs, saveUserCharts } from '../../jam/library'
 import { deleteBar, duplicateBar, insertBarAfter, patchBar, setChord, setRepeatMark } from '../../jam/edit'
 import { Knob } from '../Knob'
-import { Segmented, headText, lbl, outlineBtn } from '../controls'
+import { Segmented, h1, h2, h3, hero, headText, lbl, outlineBtn } from '../controls'
 import { ChartGrid } from './ChartGrid'
 import { ChordSymbol } from './ChordSymbol'
 import { ImportDialog } from './ImportDialog'
@@ -399,7 +399,7 @@ function Library({ charts, selectedId, onSelect, onImport, onNew, onDelete, onDe
     return (
       <div key={c.id} style={{ display: 'flex', alignItems: 'stretch', borderTop: '1px solid var(--border)', background: sel ? 'var(--bg)' : 'transparent' }}>
         <button onClick={() => onSelect(c.id)} aria-current={sel} style={libItem}>
-          <span style={{ fontFamily: 'var(--font-display)', fontSize: 20, lineHeight: 1, letterSpacing: '0.02em', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{c.title.toUpperCase()}</span>
+          <span style={{ ...h3, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{c.title.toUpperCase()}</span>
           <span style={{ display: 'flex', justifyContent: 'space-between', gap: 8 }}>
             <span style={{ ...lbl, fontSize: 9, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{c.style.toUpperCase()}</span>
             <span style={{ fontSize: 10, fontWeight: 600 }}>{keyLabel(transposeKey(c.key, c.transpose))}</span>
@@ -416,7 +416,7 @@ function Library({ charts, selectedId, onSelect, onImport, onNew, onDelete, onDe
   return (
     <aside aria-label="Library" style={{ width: 280, flexShrink: 0, background: 'var(--surface)', borderRight: '2px solid var(--ink)', display: 'flex', flexDirection: 'column', minHeight: 0 }}>
       <div style={{ display: 'flex', alignItems: 'flex-end', justifyContent: 'space-between', padding: '14px 18px 10px', borderBottom: '2px solid var(--ink)' }}>
-        <span style={{ fontFamily: 'var(--font-display)', fontSize: 40, lineHeight: 0.85 }}>LIBRARY</span>
+        <span style={h1}>LIBRARY</span>
         <span style={lbl}>{charts.length} CHARTS</span>
       </div>
       <div style={{ padding: '10px 18px', borderBottom: '1px solid var(--border)' }}>
@@ -479,7 +479,7 @@ function SongBand({ chart, mode, setMode, styleName, shownKey, onTranspose, onSt
         ) : (
           <>
             <span style={lbl}>{chart.playlist.toUpperCase()}{chart.composer ? ` · ${chart.composer.toUpperCase()}` : ''}</span>
-            <div style={{ fontFamily: 'var(--font-display)', fontSize: 56, lineHeight: 0.9, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{chart.title.toUpperCase()}</div>
+            <div style={{ ...hero, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{chart.title.toUpperCase()}</div>
           </>
         )}
       </div>
@@ -690,7 +690,7 @@ function BandPanel({ zones, prefs, styleLabels, styleName, setTrack, setPrefs, l
   return (
     <aside aria-label="Band" style={{ width: 330, flexShrink: 0, borderLeft: '2px solid var(--ink)', background: 'var(--surface)', display: 'flex', flexDirection: 'column', overflowY: 'auto' }}>
       <div style={{ display: 'flex', alignItems: 'flex-end', justifyContent: 'space-between', padding: '14px 18px 10px', borderBottom: '2px solid var(--ink)' }}>
-        <span style={{ fontFamily: 'var(--font-display)', fontSize: 40, lineHeight: 0.85 }}>BAND</span>
+        <span style={h1}>BAND</span>
         <span style={lbl}>{styleName.toUpperCase()}</span>
       </div>
       {(['drums', 'bass', 'comp'] as Track[]).map((t) => {
@@ -703,7 +703,7 @@ function BandPanel({ zones, prefs, styleLabels, styleName, setTrack, setPrefs, l
             <span style={{ width: 6, flexShrink: 0, background: zone?.color ?? 'var(--ink)' }} />
             <div style={{ flex: 1, minWidth: 0, padding: '12px 14px', display: 'flex', flexDirection: 'column', gap: 8 }}>
               <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', height: 28 }}>
-                <span style={{ fontFamily: 'var(--font-display)', fontSize: 26, lineHeight: 1, color: silent ? 'var(--label)' : 'var(--ink)' }}>{TRACK_NAMES[t]}</span>
+                <span style={{ ...h2, color: silent ? 'var(--label)' : 'var(--ink)' }}>{TRACK_NAMES[t]}</span>
                 <div style={{ display: 'flex' }}>
                   <button aria-pressed={tr.mute} aria-label={`Mute ${t}`} onClick={() => setTrack(t, { mute: !tr.mute })} style={msBtn(tr.mute, 'var(--ink)')}>M</button>
                   <button aria-pressed={tr.solo} aria-label={`Solo ${t}`} onClick={() => setTrack(t, { solo: !tr.solo })} style={msBtn(tr.solo, 'var(--accent-1)')}>S</button>
@@ -880,7 +880,7 @@ const smallInput: CSSProperties = {
   height: 26, border: 'none', borderBottom: '1.5px solid var(--ink)', background: 'transparent', fontSize: 11, color: 'var(--ink)', outline: 'none', width: 150,
 }
 const titleInput: CSSProperties = {
-  fontFamily: 'var(--font-display)', fontSize: 56, lineHeight: 0.9, background: 'transparent', border: 'none',
+  ...hero, background: 'transparent', border: 'none',
   borderBottom: '1.5px dashed var(--label)', outline: 'none', color: 'var(--ink)', padding: 0, width: '100%', minWidth: 0, textTransform: 'uppercase',
 }
 const toastStyle: CSSProperties = {

@@ -1,4 +1,5 @@
 import { useState, useRef, useCallback, useEffect } from 'react'
+import { h1 } from './controls'
 
 interface ChannelState {
   muted: boolean
@@ -231,7 +232,7 @@ export function AudioPlayer() {
         display: 'flex', alignItems: 'center', borderBottom: '2px solid var(--ink)',
         background: 'var(--surface)', minHeight: 42, padding: '0 0 0 11px', flexShrink: 0,
       }}>
-        <span style={{ fontFamily: 'var(--font-display)', fontSize: 30, letterSpacing: '0.1em', paddingRight: 16, borderRight: '1px solid var(--border)' }}>
+        <span style={{ ...h1, padding: '8px 16px 6px 4px', borderRight: '1px solid var(--border)' }}>
           AUDIO
         </span>
         <button onClick={handleLoadFile} style={{

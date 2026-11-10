@@ -3,6 +3,22 @@ import type { SynthWave } from '../types'
 
 /* Shared faceplate parts for the synth / sampler / FX panels. */
 
+/*
+ * Type scale (Bebas Neue display + IBM Plex Mono labels), shared by every tab:
+ *   h1   40px — section titles: ZONES, LIBRARY, BAND, MIXER, AUDIO, RECORDER, dialogs
+ *   hero 56px — the selected thing's name: zone name, song title
+ *   h2   26px — card / track / strip names
+ *   h3   20px — list rows
+ *   lbl  10px mono caps — subtitles and labels
+ */
+const display = (size: number, lineHeight: number): CSSProperties => ({
+  fontFamily: 'var(--font-display)', fontSize: size, lineHeight, letterSpacing: '0.02em', fontWeight: 400,
+})
+export const h1 = display(40, 0.85)
+export const hero = display(56, 0.88)
+export const h2 = display(26, 0.95)
+export const h3 = display(20, 1)
+
 export const lbl: CSSProperties = {
   fontFamily: 'var(--font-mono)', fontSize: 10, letterSpacing: '0.14em',
   color: 'var(--label)', textTransform: 'uppercase', whiteSpace: 'nowrap', userSelect: 'none',

@@ -133,7 +133,7 @@ export function Knob({
           <line x1={50} y1={50} x2={50} y2={22} stroke={ptr} strokeWidth={5} transform={`rotate(${ang} 50 50)`} />
         </svg>
       </div>
-      <span style={compact ? { ...labelStyle, fontSize: 8, letterSpacing: '0.08em' } : labelStyle}>{label}</span>
+      <span style={compact ? { ...labelStyle, fontSize: 9, letterSpacing: '0.08em' } : labelStyle}>{label}</span>
       {!compact && <span style={{ ...valueStyle, color: dimmed ? '#6E6C64' : 'var(--ink)' }}>{readout}</span>}
     </div>
   )

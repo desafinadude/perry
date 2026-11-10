@@ -8,7 +8,7 @@ import { mixOf } from '../mixer/model'
 import { SynthPanel } from './SynthPanel'
 import { SamplerPanel } from './SamplerPanel'
 import { Knob } from './Knob'
-import { Module, Segmented, lbl, outlineBtn } from './controls'
+import { Module, Segmented, h1, h2, hero, lbl, outlineBtn } from './controls'
 
 export type LearnField = 'minNote' | 'maxNote' | 'rootNote'
 export type LearningMode = { zoneId: string; field: LearnField } | null
@@ -71,7 +71,7 @@ export function ZoneEditor(props: Props) {
       {/* ── LEFT RAIL ── */}
       <aside aria-label="Zones" style={rail}>
         <div style={railHead}>
-          <span style={{ fontFamily: 'var(--font-display)', fontSize: 40, lineHeight: 0.85 }}>ZONES</span>
+          <span style={h1}>ZONES</span>
           <span style={lbl}>{zones.length} / 8</span>
         </div>
         <div style={{ overflowY: 'auto', flex: '0 1 auto' }}>
@@ -112,7 +112,7 @@ function ZoneCard({ zone, selected, onSelect, presets }: { zone: Zone; selected:
       <span style={{ width: 6, background: zone.color, flexShrink: 0 }} />
       <span style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', gap: 6, padding: '12px 14px' }}>
         <span style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', gap: 8 }}>
-          <span style={{ fontFamily: 'var(--font-display)', fontSize: 28, lineHeight: 0.9, letterSpacing: '0.02em', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+          <span style={{ ...h2, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
             {zone.name.toUpperCase()}
           </span>
           <span style={{
@@ -323,7 +323,7 @@ const band: CSSProperties = {
   display: 'flex', flexWrap: 'wrap', alignItems: 'stretch', borderBottom: '2px solid var(--ink)',
 }
 const nameInput: CSSProperties = {
-  fontFamily: 'var(--font-display)', fontSize: 64, lineHeight: 0.85, letterSpacing: '0.01em',
+  ...hero,
   textTransform: 'uppercase', background: 'transparent', border: 'none', outline: 'none',
   color: 'var(--ink)', padding: 0, marginBottom: 12, width: '100%', minWidth: 0,
 }
