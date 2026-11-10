@@ -78,10 +78,10 @@ export default function App() {
     setZones((prev) => prev.map((z) => {
       const ps = presetsByFont[z.fontId] ?? []
       if (ps.length === 0) return z
-      const valid = ps.some((p) => p.bank === z.bank && p.program === z.program)
+      const valid = ps.some((p) => p.bank === z.bank && p.program === z.program && p.isDrum === !!z.drums)
       if (valid) return z
       const first = ps.find((p) => !p.isDrum) ?? ps[0]
-      return { ...z, bank: first.bank, program: first.program }
+      return { ...z, bank: first.bank, program: first.program, drums: first.isDrum }
     }))
   }, [presetsByFont, fonts])
 
@@ -92,7 +92,7 @@ export default function App() {
     zones.forEach((zone, i) => {
       const prev = prevZonesRef.current[i]
       if (!prev || prev.program !== zone.program || prev.bank !== zone.bank
-        || prev.volume !== zone.volume || prev.channel !== zone.channel
+        || prev.volume !== zone.volume || prev.channel !== zone.channel || !!prev.drums !== !!zone.drums
         || prev.fontId !== zone.fontId) {
         applyZone(zone)
       }

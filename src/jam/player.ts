@@ -264,7 +264,12 @@ export class JamPlayer {
     if (vel <= 0.01) return
     const vel127 = Math.max(1, Math.round(vel * 127))
     let played = false
-    if (t.zoneId !== 'builtin') played = this.out.playZone(t.zoneId, ev.midi, vel127, time, p.dur)
+    if (t.zoneId !== 'builtin') {
+      // GM drum kits are very velocity-sensitive; lift soft hits so a
+      // SoundFont kit sits at about the same level as the built-in one.
+      const zoneVel = ev.track === 'drums' ? Math.max(1, Math.round(127 * Math.pow(vel, 0.55))) : vel127
+      played = this.out.playZone(t.zoneId, ev.midi, zoneVel, time, p.dur)
+    }
     if (!played) {
       const band = this.out.band
       if (ev.track === 'drums') band.drums.play(ev.midi, vel, time)

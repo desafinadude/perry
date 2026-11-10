@@ -71,6 +71,8 @@ export function useSynth() {
         sampler: [...samplerEnginesRef.current.entries()].map(([id, e]) => ({ id, sample: e.getSample()?.fileName ?? null })),
       }),
       sfVoices: () => [...synthMapRef.current.values()].map((s) => s.voicesAmount ?? -1),
+      /** Which soundfont channels are in drum mode, per font. */
+      drumChannels: () => [...synthMapRef.current.values()].map((s) => (s.channelProperties ?? []).map((c: AnySynth, i: number) => (c?.isDrum ? i + 1 : 0)).filter(Boolean)),
       /** Peak level of the master bus (0..1) — proves signal end-to-end. */
       level: () => {
         const ctx = audioCtxRef.current
@@ -259,6 +261,9 @@ export function useSynth() {
     if (engineOf(zone) !== 'soundfont') return
     const synth = synthMapRef.current.get(zone.fontId)
     if (!synth) return
+    // Drum kits are flagged, not banked (they share bank/program numbers
+    // with melodic presets), so the channel itself must be put in drum mode.
+    synth.setDrums(zone.channel, !!zone.drums)
     synth.controllerChange(zone.channel, 0, zone.bank)
     synth.controllerChange(zone.channel, 32, 0)
     synth.programChange(zone.channel, zone.program)

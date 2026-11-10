@@ -22,6 +22,8 @@ export interface Zone {
   channel: number
   program: number
   bank: number
+  /** True when the selected preset is a drum kit (the channel is switched to drum mode). */
+  drums?: boolean
   volume: number
   color: string
   fontId: string
@@ -153,6 +155,10 @@ export const ZONE_COLORS = [
 
 export const NOTE_NAMES = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B']
 export const noteName = (midi: number) => NOTE_NAMES[midi % 12] + (Math.floor(midi / 12) - 1)
+/** Key that identifies a preset in a list: drum kits share bank/program numbers with melodic presets. */
+export const presetKey = (p: { bank: number; program: number; isDrum?: boolean; drums?: boolean }) =>
+  `${p.isDrum || p.drums ? 'd' : 'm'}:${p.bank}:${p.program}`
+
 export const isBlackKey = (midi: number) => [1, 3, 6, 8, 10].includes(midi % 12)
 
 // Convert note name (like "A0" or "C8") to MIDI number, or return null if invalid

@@ -703,11 +703,15 @@ function BandPanel({ zones, prefs, styleLabels, styleName, setTrack, setPrefs, l
                   <label htmlFor={`jam-zone-${t}`} style={{ ...lbl, fontSize: 9 }}>SOUND</label>
                   <select id={`jam-zone-${t}`} value={zone ? tr.zoneId : 'builtin'} onChange={(e) => setTrack(t, { zoneId: e.target.value })} style={{ ...bigSelect, height: 32, fontSize: 10, width: '100%' }}>
                     <option value="builtin">BUILT-IN {t === 'drums' ? 'KIT' : t === 'bass' ? 'BASS' : 'KEYS'}</option>
-                    {zones.map((z) => (
-                      <option key={z.id} value={z.id}>ZONE · {z.name.toUpperCase()} ({(z.engine ?? 'soundfont') === 'soundfont' ? `SF2 CH ${z.channel + 1}` : (z.engine ?? '').toUpperCase()})</option>
+                    {[...zones].sort((a, b) => (t === 'drums' ? Number(!!b.drums) - Number(!!a.drums) : 0)).map((z) => (
+                      <option key={z.id} value={z.id}>
+                        ZONE · {z.name.toUpperCase()} ({(z.engine ?? 'soundfont') === 'soundfont' ? `SF2${z.drums ? ' DRUM KIT' : ''} CH ${z.channel + 1}` : (z.engine ?? '').toUpperCase()})
+                      </option>
                     ))}
                   </select>
-                  <span style={{ ...lbl, fontSize: 9 }}>PATTERN · <span style={{ color: 'var(--ink)' }}>{styleLabels[t]}</span></span>
+                  {t === 'drums' && zone && (zone.engine ?? 'soundfont') === 'soundfont' && !zone.drums
+                    ? <span style={{ ...lbl, fontSize: 9, color: '#B3281B', whiteSpace: 'normal' }}>THIS ZONE HAS A MELODIC PRESET — PICK A DRUM KIT IN ZONES</span>
+                    : <span style={{ ...lbl, fontSize: 9 }}>PATTERN · <span style={{ color: 'var(--ink)' }}>{styleLabels[t]}</span></span>}
                 </div>
                 <Knob label="VOL" size={46} value={tr.volume} min={0} max={1} defaultValue={DEFAULT_PREFS.tracks[t].volume}
                   dimmed={silent} onChange={(v) => setTrack(t, { volume: v })} display={(v) => `${Math.round(v * 100)}`} />
