@@ -101,6 +101,7 @@ function ZoneCard({ zone, selected, onSelect, presets }: { zone: Zone; selected:
   const engine = zone.engine ?? 'soundfont'
   const source = engine === 'synth' ? 'SYNTH PATCH'
     : engine === 'sampler' ? (zone.sampler?.fileName?.toUpperCase() || 'NO SAMPLE')
+    : presets.length === 0 ? 'FONT NOT LOADED'
     : (presets.find((p) => presetKey(p) === presetKey(zone))?.name.toUpperCase() ?? `PROGRAM ${zone.program + 1}`)
   const tag = engine === 'soundfont' ? 'SF2' : engine === 'synth' ? 'SYNTH' : 'SAMPLE'
   return (
@@ -221,6 +222,14 @@ function ZoneDetail({
           learningRoot={learning('rootNote')}
           onLearnRoot={() => toggleLearn('rootNote')}
         />
+      )}
+      {engine === 'soundfont' && !fonts.some((f) => f.id === zone.fontId) && (
+        <div role="alert" style={{ display: 'flex', alignItems: 'center', gap: 16, padding: '12px 24px', borderBottom: '1px solid var(--border)', background: '#FBEAE7', flexWrap: 'wrap' }}>
+          <span style={{ ...lbl, color: '#B3281B', whiteSpace: 'normal', flex: 1 }}>
+            THIS ZONE'S SOUNDFONT{zone.fontName ? ` “${zone.fontName.toUpperCase()}”` : ''} ISN'T LOADED — SO IT'S SILENT. LOAD THE FILE ONCE AND PERRY KEEPS IT FROM NOW ON.
+          </span>
+          <button onClick={() => onLoadFont(zone.fontId)} style={{ ...outlineBtn, height: 34, fontSize: 10, background: 'var(--ink)', color: 'var(--bg)' }}>LOAD {zone.fontName ? zone.fontName.toUpperCase() : 'FONT'}…</button>
+        </div>
       )}
       {engine === 'soundfont' && (
         <section aria-label="SoundFont" style={{ display: 'grid', gridTemplateColumns: 'repeat(3, minmax(0, 1fr))', borderBottom: '2px solid var(--ink)' }}>

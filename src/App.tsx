@@ -85,6 +85,22 @@ export default function App() {
     }))
   }, [presetsByFont, fonts])
 
+  // A zone whose font id is gone picks up a loaded font with the same file name
+  useEffect(() => {
+    if (fonts.length === 0) return
+    setZones((prev) => {
+      let changed = false
+      const next = prev.map((z) => {
+        if ((z.engine ?? 'soundfont') !== 'soundfont' || fonts.some((f) => f.id === z.fontId) || !z.fontName) return z
+        const match = fonts.find((f) => f.name === z.fontName)
+        if (!match) return z
+        changed = true
+        return { ...z, fontId: match.id }
+      })
+      return changed ? next : prev
+    })
+  }, [fonts])
+
   // Sync zones to synth on change
   const prevZonesRef = useRef<Zone[]>([])
   useEffect(() => {
@@ -282,15 +298,33 @@ export default function App() {
   // Save / load configs
   const handleSave = useCallback(() => {
     const name = saveInput.trim() || `Config ${savedConfigs.length + 1}`
-    setSavedConfigs(saveConfig(name, zones))
+    // record font names so a config can find its fonts again after a reload
+    const named = zones.map((z) => ({ ...z, fontName: fonts.find((f) => f.id === z.fontId)?.name ?? z.fontName }))
+    setSavedConfigs(saveConfig(name, named))
     setSaveInput('')
-  }, [saveInput, savedConfigs.length, zones])
+  }, [saveInput, savedConfigs.length, zones, fonts])
 
   const handleLoad = useCallback((cfg: SavedConfig) => {
     allNotesOff(); setActiveNotes(new Set())
-    setZones(cfg.zones.map((z) => ({ ...z, id: String(zoneIdCounter++) })))
+    // Keep zone ids stable (the JAM band remembers zones by id); only renumber
+    // duplicates. Re-point zones whose font id is gone to a font with the same name.
+    const seen = new Set<string>()
+    const loaded = cfg.zones.map((z) => {
+      let id = z.id
+      if (!id || seen.has(id)) id = String(zoneIdCounter++)
+      seen.add(id)
+      let fontId = z.fontId
+      if (!fonts.some((f) => f.id === fontId) && z.fontName) {
+        const match = fonts.find((f) => f.name === z.fontName)
+        if (match) fontId = match.id
+      }
+      return { ...z, id, fontId }
+    })
+    const maxId = Math.max(0, ...loaded.map((z) => Number(z.id)).filter(Number.isFinite))
+    zoneIdCounter = Math.max(zoneIdCounter, maxId + 1)
+    setZones(loaded)
     setShowSaved(false)
-  }, [allNotesOff])
+  }, [allNotesOff, fonts])
 
   const handleDelete = useCallback((id: string) => setSavedConfigs(deleteConfig(id)), [])
 

@@ -27,6 +27,8 @@ export interface Zone {
   volume: number
   color: string
   fontId: string
+  /** Name of the SoundFont file, recorded when a config is saved so it can be found again. */
+  fontName?: string
   /** Which layer this zone belongs to.
    *  'input'    – responds to live MIDI/keyboard only (silent during sheet playback)
    *  'playback' – sounds during sheet playback only (silent for live MIDI)

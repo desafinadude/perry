@@ -86,6 +86,13 @@ export class Sampler {
     }
   }
 
+  /** Pick up this zone's sample from the cache (after a restore). */
+  reloadFromCache(): void {
+    if (this.disposed || !this.settings.fileName) return
+    const cached = getCachedSample(this.settings.fileName)
+    if (cached) this.buffer = cached
+  }
+
   setBuffer(buffer: AudioBuffer | null): void {
     this.buffer = buffer
   }
