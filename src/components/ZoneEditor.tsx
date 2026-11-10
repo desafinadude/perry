@@ -1,9 +1,10 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import type { CSSProperties, ReactNode } from 'react'
 import type { Zone, Preset, LoadedFont, ZoneEngine } from '../types'
-import { noteName, presetKey, ZONE_COLORS, defaultEffects, defaultSynth, defaultSampler } from '../types'
+import { noteName, presetKey, ZONE_COLORS, defaultSynth, defaultSampler } from '../types'
 import { getCachedSample } from '../audio/sampler'
-import { EffectsPanel } from './EffectsPanel'
+import { ChannelPanel } from './ChannelPanel'
+import { mixOf } from '../mixer/model'
 import { SynthPanel } from './SynthPanel'
 import { SamplerPanel } from './SamplerPanel'
 import { Knob } from './Knob'
@@ -30,6 +31,8 @@ interface Props {
   railFooter?: ReactNode
   /** Analyser on a zone's output (for the synth scope). */
   getZoneAnalyser: (zone: Zone) => AnalyserNode | null
+  /** Switch to the MIXER tab. */
+  onOpenMixer: () => void
 }
 
 const ENGINES = [
@@ -131,7 +134,7 @@ function ZoneCard({ zone, selected, onSelect, presets }: { zone: Zone; selected:
 
 function ZoneDetail({
   zone, index, zones, fonts, presetsByFont, onChange, onRemove, onLoadFont,
-  learningMode, onSetLearningMode, onLoadSample, sampleInfo, getZoneAnalyser,
+  learningMode, onSetLearningMode, onLoadSample, sampleInfo, getZoneAnalyser, onOpenMixer,
 }: Props & { zone: Zone; index: number }) {
   // stable getter so the scope's animation loop isn't restarted on every knob turn
   const zoneRef = useRef(zone)
@@ -149,7 +152,6 @@ function ZoneDetail({
     onChange(updated)
   }
 
-  const effects = zone.effects ?? defaultEffects()
   const buffer = zone.sampler?.fileName ? getCachedSample(zone.sampler.fileName) : undefined
 
   return (
@@ -278,7 +280,7 @@ function ZoneDetail({
       )}
 
       {/* ── FX rack ── */}
-      <EffectsPanel effects={effects} onChange={(fx) => onChange({ ...zone, effects: fx })} />
+      <ChannelPanel mix={mixOf(zone)} onChange={(mix) => onChange({ ...zone, mix, effects: undefined })} onOpenMixer={onOpenMixer} />
     </>
   )
 }

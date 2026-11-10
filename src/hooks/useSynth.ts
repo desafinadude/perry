@@ -1,7 +1,8 @@
 import { useState, useRef, useCallback, useEffect } from 'react'
 import type { Preset, LoadedFont, Zone } from '../types'
-import { DEFAULT_EFFECTS, defaultEffects, defaultSynth, defaultSampler } from '../types'
-import { EffectsChain } from '../audio/effectsChain'
+import { defaultSynth, defaultSampler } from '../types'
+import { ChannelStrip, FxBuses, MasterBus } from '../audio/mixer'
+import { JAM_STRIPS, mixOf, normaliseMixer, type JamStrip, type MixerSettings } from '../mixer/model'
 import { SubtractiveSynth } from '../audio/subtractiveSynth'
 import { Sampler, cacheSample } from '../audio/sampler'
 import { deleteFont, listFonts, listSamples, saveFont, saveSample } from '../audio/assetStore'
@@ -56,7 +57,15 @@ export function useSynth() {
 
   // ── FX / engine state ──
   const masterRef = useRef<GainNode | null>(null)
-  const chainsRef = useRef<Map<string, EffectsChain>>(new Map())
+  const masterBusRef = useRef<MasterBus | null>(null)
+  const busesRef = useRef<FxBuses | null>(null)
+  /** Channel strips per zone stream (soundfont channel or engine zone). */
+  const chainsRef = useRef<Map<string, ChannelStrip>>(new Map())
+  /** Strips for the JAM band's built-in sounds and the click. */
+  const jamStripsRef = useRef<Map<JamStrip, ChannelStrip>>(new Map())
+  const mixerRef = useRef<MixerSettings>(normaliseMixer(null))
+  const mixBpmRef = useRef(120)
+  const lastZonesRef = useRef<Zone[]>([])
   // chain key → the (synth, channel) tap currently feeding it
   const tapsRef = useRef<Map<string, { synth: AnySynth; ch: number }>>(new Map())
   const synthEnginesRef = useRef<Map<string, SubtractiveSynth>>(new Map())
@@ -75,6 +84,13 @@ export function useSynth() {
         sampler: [...samplerEnginesRef.current.entries()].map(([id, e]) => ({ id, sample: e.getSample()?.fileName ?? null })),
       }),
       sfVoices: () => [...synthMapRef.current.values()].map((s) => s.voicesAmount ?? -1),
+      /** Mixer: peak dBFS per strip, per FX return, and master. */
+      mixLevels: () => ({
+        strips: Object.fromEntries([...chainsRef.current].map(([k, c]) => [k, Math.round(c.level())])),
+        jam: Object.fromEntries([...jamStripsRef.current].map(([k, c]) => [k, Math.round(c.level())])),
+        buses: busesRef.current?.levels(),
+        master: masterBusRef.current?.levels(),
+      }),
       /** Which soundfont channels are in drum mode, per font. */
       drumChannels: () => [...synthMapRef.current.values()].map((s) => (s.channelProperties ?? []).map((c: AnySynth, i: number) => (c?.isDrum ? i + 1 : 0)).filter(Boolean)),
       /** Peak level of the master bus (0..1) — proves signal end-to-end. */
@@ -116,24 +132,19 @@ export function useSynth() {
   }, [])
 
   /**
-   * Master bus: the legacy 1.2× "punch" gain, plus a safety limiter so
-   * summed per-channel FX (reverb/delay sends) can never hard-clip.
-   * All soundfont FX buses and all zone chains feed this node.
+   * Master bus (fader → safety limiter → speakers) plus the three shared FX
+   * buses whose returns feed it. Every strip, the soundfont FX return and the
+   * JAM band end up here. Returns the master input node.
    */
   const getMaster = useCallback((ctx: AudioContext): GainNode => {
     if (masterRef.current) return masterRef.current
-    const gain = ctx.createGain()
-    gain.gain.value = 1.2
-    const limiter = ctx.createDynamicsCompressor()
-    limiter.threshold.value = -1
-    limiter.knee.value = 6
-    limiter.ratio.value = 12
-    limiter.attack.value = 0.003
-    limiter.release.value = 0.25
-    gain.connect(limiter)
-    limiter.connect(ctx.destination)
-    masterRef.current = gain
-    return gain
+    const mb = new MasterBus(ctx)
+    masterBusRef.current = mb
+    busesRef.current = new FxBuses(ctx, mb.input)
+    busesRef.current.setSettings(mixerRef.current, mixBpmRef.current)
+    mb.setLevel(mixerRef.current.master.level)
+    masterRef.current = mb.input
+    return mb.input
   }, [])
 
   const ensureAudio = useCallback(async () => {
@@ -300,6 +311,9 @@ export function useSynth() {
     synth.controllerChange(zone.channel, 32, 0)
     synth.programChange(zone.channel, zone.program)
     synth.controllerChange(zone.channel, 7, zone.volume)
+    // reverb / chorus come from the mixer's shared buses, not the synth's own
+    synth.controllerChange(zone.channel, 91, 0)
+    synth.controllerChange(zone.channel, 93, 0)
   }, [])
 
   const noteOn = useCallback(async (zone: Zone, note: number, velocity: number) => {
@@ -450,8 +464,10 @@ export function useSynth() {
     for (const z of zones) {
       const key = chainKeyFor(z)
       const current = desired.get(key)
-      if (!current || (!current.effects && z.effects)) desired.set(key, z)
+      if (!current || (!(current.mix || current.effects) && (z.mix || z.effects))) desired.set(key, z)
     }
+    lastZonesRef.current = zones
+    const silenced = soloState(zones)
 
     // 1. Remove chains that no zone needs anymore
     for (const [key, chain] of [...chainsRef.current]) {
@@ -469,10 +485,11 @@ export function useSynth() {
     for (const [key, zone] of desired) {
       let chain = chainsRef.current.get(key)
       if (!chain) {
-        chain = new EffectsChain(ctx, master)
+        chain = new ChannelStrip(ctx, master, busesRef.current!)
         chainsRef.current.set(key, chain)
       }
-      chain.setSettings(zone.effects ?? DEFAULT_EFFECTS)
+      const mix = mixOf(zone)
+      chain.setSettings(mix, mix.mute || silenced(mix))
 
       const engine = engineOf(zone)
       const tap = tapsRef.current.get(key)
@@ -541,6 +558,66 @@ export function useSynth() {
     }
   }, [getCtx, getMaster])
 
+  /** Returns a predicate: is this strip silenced by someone else's solo? */
+  function soloState(zones: Zone[]) {
+    const m = mixerRef.current
+    const anySolo = zones.some((z) => mixOf(z).solo) || JAM_STRIPS.some((k) => m.jam[k].solo)
+    return (mix: { solo: boolean }) => anySolo && !mix.solo
+  }
+
+  /**
+   * Apply mixer-wide settings: FX buses, master fader, JAM strips, and solo
+   * across every strip. `bpm` drives tempo-synced delay.
+   */
+  const syncMixer = useCallback((settings: MixerSettings, bpm: number) => {
+    mixerRef.current = settings
+    mixBpmRef.current = bpm
+    if (!masterRef.current) return // graph not built yet; applied on creation
+    busesRef.current?.setSettings(settings, bpm)
+    masterBusRef.current?.setLevel(settings.master.level)
+    const silenced = soloState(lastZonesRef.current)
+    jamStripsRef.current.forEach((strip, k) => strip.setSettings(settings.jam[k], settings.jam[k].mute || silenced(settings.jam[k])))
+    // solo changes affect the zone strips too
+    const seen = new Set<string>()
+    for (const z of lastZonesRef.current) {
+      const key = chainKeyFor(z)
+      if (seen.has(key)) continue
+      seen.add(key)
+      const mix = mixOf(z)
+      chainsRef.current.get(key)?.setSettings(mix, mix.mute || silenced(mix))
+    }
+  }, [])
+
+  /** Inputs of the JAM band's strips (built-in drums / bass / keys / click). */
+  const getJamOutputs = useCallback(() => {
+    const ctx = audioCtxRef.current ?? getCtx()
+    const master = getMaster(ctx)
+    const silenced = soloState(lastZonesRef.current)
+    for (const k of JAM_STRIPS) {
+      if (!jamStripsRef.current.has(k)) {
+        const strip = new ChannelStrip(ctx, master, busesRef.current!)
+        const mix = mixerRef.current.jam[k]
+        strip.setSettings(mix, mix.mute || silenced(mix))
+        jamStripsRef.current.set(k, strip)
+      }
+    }
+    const j = jamStripsRef.current
+    return { ctx, drums: j.get('drums')!.input, bass: j.get('bass')!.input, keys: j.get('keys')!.input, click: j.get('click')!.input }
+  }, [getCtx, getMaster])
+
+  /** Peak levels in dBFS for the mixer's meters (−Infinity = silence). */
+  const readMeters = useCallback(() => {
+    const strips: Record<string, number> = {}
+    chainsRef.current.forEach((c, k) => { strips[k] = c.level() })
+    const jam: Partial<Record<JamStrip, number>> = {}
+    jamStripsRef.current.forEach((c, k) => { jam[k] = c.level() })
+    return {
+      strips, jam,
+      buses: busesRef.current?.levels() ?? { reverb: -Infinity, delay: -Infinity, chorus: -Infinity },
+      master: masterBusRef.current?.levels() ?? { l: -Infinity, r: -Infinity, reduction: 0 },
+    }
+  }, [])
+
   // ── Sample loading ─────────────────────────────────────────────────────────
   /** Decode an audio file for a sampler zone and cache it by file name. */
   const loadSampleForZone = useCallback(async (zoneId: string, file: File): Promise<string> => {
@@ -557,7 +634,7 @@ export function useSynth() {
   }, [getCtx])
 
   // ── Analysers (scope / spectrum) ─────────────────────────────────────────────
-  const analysersRef = useRef<WeakMap<EffectsChain, AnalyserNode>>(new WeakMap())
+  const analysersRef = useRef<WeakMap<ChannelStrip, AnalyserNode>>(new WeakMap())
   /**
    * Analyser tapped off a zone's FX-chain output (post effects, pre master).
    * Created lazily and cached per chain; returns null before audio exists.
@@ -602,5 +679,6 @@ export function useSynth() {
     firstMelodicPreset,
     syncAudio, loadSampleForZone, getZoneAnalyser,
     scheduleNote, stopScheduled, getAudio,
+    syncMixer, getJamOutputs, readMeters, chainKeyFor,
   }
 }

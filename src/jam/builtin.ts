@@ -19,14 +19,18 @@ function noise(ctx: AudioContext): AudioBuffer {
 
 export class DrumKit {
   readonly output: GainNode
+  /** Metronome clicks get their own output (their own mixer strip). */
+  readonly clickOut: GainNode
   private readonly ctx: AudioContext
   private readonly live = new Set<AudioScheduledSourceNode>()
 
-  constructor(ctx: AudioContext, destination: AudioNode) {
+  constructor(ctx: AudioContext, destination: AudioNode, clickDestination: AudioNode = destination) {
     this.ctx = ctx
     this.output = ctx.createGain()
     this.output.gain.value = 0.9
     this.output.connect(destination)
+    this.clickOut = ctx.createGain()
+    this.clickOut.connect(clickDestination)
   }
 
   setVolume(v: number) { this.output.gain.setTargetAtTime(v, this.ctx.currentTime, 0.02) }
@@ -56,7 +60,7 @@ export class DrumKit {
     g.gain.setValueAtTime(0, t)
     g.gain.linearRampToValueAtTime(accent ? 0.5 : 0.32, t + 0.002)
     g.gain.exponentialRampToValueAtTime(0.001, t + 0.05)
-    o.connect(g).connect(this.output)
+    o.connect(g).connect(this.clickOut)
     this.start(o, t, t + 0.06)
   }
 
@@ -161,14 +165,15 @@ export class BuiltinBand {
   private readonly bassGain: GainNode
   private readonly keysGain: GainNode
 
-  constructor(ctx: AudioContext, destination: AudioNode) {
-    this.drums = new DrumKit(ctx, destination)
+  /** Each part goes to its own destination (a mixer strip). */
+  constructor(ctx: AudioContext, out: { drums: AudioNode; bass: AudioNode; keys: AudioNode; click: AudioNode }) {
+    this.drums = new DrumKit(ctx, out.drums, out.click)
     this.bass = new SubtractiveSynth(ctx, BASS_PATCH)
     this.keys = new SubtractiveSynth(ctx, KEYS_PATCH)
     this.bassGain = ctx.createGain(); this.bassGain.gain.value = 0.9
     this.keysGain = ctx.createGain(); this.keysGain.gain.value = 0.45
-    this.bass.output.connect(this.bassGain).connect(destination)
-    this.keys.output.connect(this.keysGain).connect(destination)
+    this.bass.output.connect(this.bassGain).connect(out.bass)
+    this.keys.output.connect(this.keysGain).connect(out.keys)
   }
 
   stopAll() {
