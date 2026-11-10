@@ -40,6 +40,7 @@ export class Sampler {
   private settings: SamplerSettings
   private buffer: AudioBuffer | null = null
   private readonly voices = new Map<number, Voice[]>()
+  private readonly scheduled = new Set<{ src: AudioBufferSourceNode; vca: GainNode }>()
   private readonly sustained = new Set<number>()
   private sustainPedal = false
   private volume = 1
@@ -156,6 +157,68 @@ export class Sampler {
     }
   }
 
+  /**
+   * Play at an exact audio-clock time for a fixed length (jam band). The
+   * voice is independent of live keyboard voices and cleans itself up.
+   * One-shot samples ignore the length and play to the end.
+   */
+  playNote(note: number, velocity: number, when: number, duration: number): void {
+    if (this.disposed || !this.buffer) return
+    const ctx = this.ctx
+    const s = this.settings
+    const buf = this.buffer
+    const start = Math.max(when, ctx.currentTime)
+    const peak = Math.pow(Math.max(0, Math.min(1, velocity / 127)), 1.4) * 0.9
+
+    const src = ctx.createBufferSource()
+    src.buffer = buf
+    src.playbackRate.value = Math.pow(2, (note - s.rootNote) / 12)
+    if (s.loop) {
+      src.loop = true
+      const ls = Math.max(0, Math.min(s.loopStart, buf.duration - 0.01))
+      src.loopStart = ls
+      src.loopEnd = Math.max(ls + 0.01, Math.min(s.loopEnd || buf.duration, buf.duration))
+    }
+    const vca = ctx.createGain()
+    const a = Math.max(0.001, s.ampAttack)
+    const d = Math.max(0.001, s.ampDecay)
+    const sus = Math.max(0, Math.min(1, s.ampSustain)) * peak
+    const g = vca.gain
+    g.setValueAtTime(0, start)
+    g.linearRampToValueAtTime(peak, start + a)
+    g.linearRampToValueAtTime(sus, start + a + d)
+    src.connect(vca)
+    vca.connect(this.output)
+    src.start(start)
+    if (!s.oneShot) {
+      const end = start + Math.max(0.03, duration, a)
+      const rel = Math.max(0.01, s.ampRelease)
+      g.cancelScheduledValues(end)
+      g.setTargetAtTime(0, end, rel / 4)
+      src.stop(end + rel + 0.1)
+    }
+    const v = { src, vca }
+    this.scheduled.add(v)
+    src.onended = () => {
+      this.scheduled.delete(v)
+      try { src.disconnect(); vca.disconnect() } catch { /* gone */ }
+    }
+  }
+
+  /** Fade out every scheduled (jam) voice. */
+  stopScheduled(): void {
+    const now = this.ctx.currentTime
+    for (const v of [...this.scheduled]) {
+      try {
+        v.vca.gain.cancelScheduledValues(now)
+        v.vca.gain.setValueAtTime(v.vca.gain.value, now)
+        v.vca.gain.linearRampToValueAtTime(0, now + 0.05)
+        v.src.stop(now + 0.1)
+      } catch { /* already stopped */ }
+    }
+    this.scheduled.clear()
+  }
+
   noteOff(note: number): void {
     if (this.disposed) return
     if (this.settings.oneShot) return // drum mode: let it ring
@@ -217,6 +280,7 @@ export class Sampler {
       for (const v of [...list]) this.stopVoice(v, rel)
     }
     this.voices.clear()
+    this.stopScheduled()
   }
 
 
@@ -233,6 +297,7 @@ export class Sampler {
       }
     }
     this.voices.clear()
+    this.stopScheduled()
     this.sustained.clear()
     this.sustainPedal = false
   }

@@ -5,6 +5,7 @@ import type { LearningMode } from './components/ZoneEditor'
 import { Recorder, RecorderHandle } from './components/Recorder'
 import { SheetPlayer, SheetPlayerHandle } from './components/SheetPlayer'
 import { AudioPlayer } from './components/AudioPlayer'
+import { JamView } from './components/jam/JamView'
 import { useSynth } from './hooks/useSynth'
 import { useMidi } from './hooks/useMidi'
 import { getCachedSample } from './audio/sampler'
@@ -36,7 +37,7 @@ export default function App() {
   const [showSaved, setShowSaved] = useState(false)
   const [recorderHeight, setRecorderHeight] = useState(180)
   const [learningMode, setLearningMode] = useState<LearningMode>(null)
-  const [activeTab, setActiveTab] = useState<'zones' | 'sheet' | 'audio'>('zones')
+  const [activeTab, setActiveTab] = useState<'zones' | 'sheet' | 'audio' | 'jam'>('zones')
 
   const recorderRef = useRef<RecorderHandle>(null)
   const sheetPlayerRef = useRef<SheetPlayerHandle>(null)
@@ -48,6 +49,7 @@ export default function App() {
     applyZone, noteOn, noteOff, sendCC, sendPitchBend,
     allNotesOff, ensureAudioReady, firstMelodicPreset,
     syncAudio, loadSampleForZone, getZoneAnalyser,
+    scheduleNote, stopScheduled, getAudio,
   } = useSynth()
 
   // Once a font loads, create default zone if none exist
@@ -348,6 +350,12 @@ export default function App() {
           >
             ♫ AUDIO
           </button>
+          <button
+            className={`mode-tab${activeTab === 'jam' ? ' active' : ''}`}
+            onClick={() => setActiveTab('jam')}
+          >
+            JAM
+          </button>
         </div>
 
         {/* SF status */}
@@ -443,6 +451,17 @@ export default function App() {
       {/* ━━━ AUDIO TAB ━━━ */}
       <div style={{ display: activeTab === 'audio' ? 'flex' : 'none', flex: 1, flexDirection: 'column', overflow: 'hidden', minHeight: 0 }}>
         <AudioPlayer />
+      </div>
+
+      {/* ━━━ JAM TAB ━━━ */}
+      <div style={{ display: activeTab === 'jam' ? 'flex' : 'none', flex: 1, flexDirection: 'column', overflow: 'hidden', minHeight: 0 }}>
+        <JamView
+          zones={zones}
+          active={activeTab === 'jam'}
+          scheduleNote={scheduleNote}
+          stopScheduled={stopScheduled}
+          getAudio={getAudio}
+        />
       </div>
 
       {/* ━━━ ZONES TAB ━━━ */}
