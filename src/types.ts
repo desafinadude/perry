@@ -45,6 +45,21 @@ export interface Zone {
   synth?: SynthSettings
   /** Sampler mapping (used when engine === 'sampler'). */
   sampler?: SamplerSettings
+  /** Chosen icon. Unset → guessed from the name; { id: 'none' } → no icon. */
+  icon?: ZoneIcon
+}
+
+/**
+ * A zone's icon: one of Perry's built-ins (`id` only), or an imported SVG
+ * (e.g. from the Noun Project) carried inline so it travels with configs.
+ */
+export interface ZoneIcon {
+  id: string
+  /** Sanitised SVG markup, for imported icons. */
+  svg?: string
+  name?: string
+  /** Attribution, e.g. "Jane Doe · Noun Project". */
+  credit?: string
 }
 
 /**

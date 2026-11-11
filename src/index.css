@@ -448,3 +448,8 @@ input[type="range"]::-moz-range-thumb {
 /* Knob focus ring (keyboard users) */
 .perry-knob { outline: none; }
 .perry-knob:focus-visible { outline: 2px solid var(--accent-1); outline-offset: 2px; }
+
+/* Imported zone icons fill their box and take the text colour */
+.perry-icon > svg { width: 100%; height: 100%; display: block; }
+.perry-icon [fill="#fff"] { fill: var(--icon-knock, var(--bg)); }
+.perry-icon [stroke="#fff"] { stroke: var(--icon-knock, var(--bg)); }

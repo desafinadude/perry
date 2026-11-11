@@ -9,6 +9,8 @@ import { SynthPanel } from './SynthPanel'
 import { SamplerPanel } from './SamplerPanel'
 import { Knob } from './Knob'
 import { Module, Segmented, h1, h2, hero, lbl, outlineBtn } from './controls'
+import { ZoneIconView, resolveZoneIcon, IconGlyph } from './ZoneIconView'
+import { IconPicker } from './IconPicker'
 
 export type LearnField = 'minNote' | 'maxNote' | 'rootNote'
 export type LearningMode = { zoneId: string; field: LearnField } | null
@@ -110,6 +112,9 @@ function ZoneCard({ zone, selected, onSelect, presets }: { zone: Zone; selected:
   return (
     <button onClick={onSelect} aria-current={selected} style={{ ...card, background: selected ? 'var(--bg)' : 'transparent' }}>
       <span style={{ width: 6, background: zone.color, flexShrink: 0 }} />
+      <span style={{ display: 'flex', alignItems: 'center', paddingLeft: 14, color: 'var(--ink)' }}>
+        <ZoneIconView zone={zone} size={30} />
+      </span>
       <span style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', gap: 6, padding: '12px 14px' }}>
         <span style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', gap: 8 }}>
           <span style={{ ...h2, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
@@ -153,6 +158,11 @@ function ZoneDetail({
   }
 
   const buffer = zone.sampler?.fileName ? getCachedSample(zone.sampler.fileName) : undefined
+  const [iconOpen, setIconOpen] = useState(false)
+  const iconBtnRef = useRef<HTMLButtonElement>(null)
+  const zoneIcon = resolveZoneIcon(zone)
+  // close the picker when switching zones
+  useEffect(() => { setIconOpen(false) }, [zone.id])
 
   return (
     <>
@@ -170,12 +180,34 @@ function ZoneDetail({
             </div>
             <span style={lbl}>ZONE {String(index + 1).padStart(2, '0')}{engine === 'soundfont' ? ` · CH ${zone.channel + 1}` : ''}</span>
           </div>
-          <input
-            aria-label="Zone name"
-            value={zone.name}
-            onChange={(e) => onChange({ ...zone, name: e.target.value })}
-            style={nameInput}
-          />
+          <div style={{ position: 'relative', display: 'flex', alignItems: 'center', gap: 14, marginBottom: 12 }}>
+            <button
+              data-icon-trigger
+              ref={iconBtnRef}
+              aria-label="Choose an icon" aria-haspopup="dialog" aria-expanded={iconOpen}
+              title={zoneIcon ? `${zoneIcon.icon.name ?? 'Icon'}${zoneIcon.icon.credit ? ` — ${zoneIcon.icon.credit}` : ''} · click to change` : 'Add an icon'}
+              onClick={() => setIconOpen((o) => !o)}
+              style={iconBtn(iconOpen)}
+            >
+              {zoneIcon
+                ? <IconGlyph icon={zoneIcon.icon} size={36} />
+                : <span style={{ fontFamily: 'var(--font-mono)', fontSize: 9, letterSpacing: '0.1em', lineHeight: 1.3 }}>+<br />ICON</span>}
+            </button>
+            <input
+              aria-label="Zone name"
+              value={zone.name}
+              onChange={(e) => onChange({ ...zone, name: e.target.value })}
+              style={nameInput}
+            />
+            {iconOpen && (
+              <IconPicker
+                zone={zone}
+                anchor={iconBtnRef.current}
+                onChange={(icon) => onChange({ ...zone, icon })}
+                onClose={() => setIconOpen(false)}
+              />
+            )}
+          </div>
         </div>
 
         <div style={{ display: 'flex', alignItems: 'center', gap: 24, padding: '14px 24px', flexWrap: 'wrap' }}>
@@ -325,8 +357,15 @@ const band: CSSProperties = {
 const nameInput: CSSProperties = {
   ...hero,
   textTransform: 'uppercase', background: 'transparent', border: 'none', outline: 'none',
-  color: 'var(--ink)', padding: 0, marginBottom: 12, width: '100%', minWidth: 0,
+  color: 'var(--ink)', padding: 0, flex: 1, width: '100%', minWidth: 0,
 }
+const iconBtn = (open: boolean): CSSProperties => ({
+  width: 56, height: 56, flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 0,
+  borderRadius: 0, cursor: 'pointer', textAlign: 'center',
+  border: `1.5px solid ${open ? 'var(--accent-1)' : 'var(--ink)'}`,
+  background: open ? 'var(--accent-1)' : 'transparent', color: open ? '#fff' : 'var(--ink)',
+  ['--icon-knock' as string]: open ? 'var(--accent-1)' : 'var(--bg)',
+})
 const removeBtn: CSSProperties = {
   width: 44, height: 44, background: 'transparent', border: '1.5px solid var(--border)',
   cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', borderRadius: 0,

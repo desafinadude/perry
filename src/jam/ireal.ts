@@ -142,9 +142,13 @@ export function parseMusic(music: string): { bars: ChartBar[]; timeSig: string }
     return d.texts.length > 0 || !!d.repeat || !!d.section || d.ending !== undefined || !!d.text || !!d.segno || !!d.coda || !!d.timeSig || !!d.open
   }
   function finish(close?: ChartBar['close']) {
-    if (!hasContent(cur) && cur.spaces < 2) {
+    // Blank cells right after a closing barline (e.g. "} XyQXyQ|N2…") are
+    // layout padding that lines the 2nd ending up under the 1st — not a bar.
+    const prevClose = bars[bars.length - 1]?.close
+    const padding = !hasContent(cur) && (prevClose === '}' || prevClose === ']' || prevClose === 'Z')
+    if (!hasContent(cur) && (cur.spaces < 2 || padding)) {
       // a bare double-bar or stray barline: attach the close to the last bar
-      if (close && bars.length) bars[bars.length - 1].close = close
+      if (close && bars.length && !padding) bars[bars.length - 1].close = close
       cur = blank()
       return
     }
