@@ -44,13 +44,30 @@ const isJump = (b: ChartBar) => !!b.text && /D\.?\s?[CS]\.?/i.test(b.text)
 const isFine = (b: ChartBar) => !!b.text && /\bFine\b/i.test(b.text) && !isJump(b)
 
 function repeatTimes(bars: ChartBar[], from: number): number {
-  for (let j = from; j < bars.length; j++) {
-    if (bars[j].close === '}') {
-      const m = bars[j].text?.match(/(\d+)\s*x/i) ?? bars[from].text?.match(/(\d+)\s*x/i)
-      return m ? Math.max(2, Number(m[1])) : 2
+  // "3x" written on the repeat, or as many passes as there are endings (N1 N2 N3)
+  let endings = 0
+  let text = 0
+  let j = from
+  // up to the first "}"
+  for (; j < bars.length; j++) {
+    const b = bars[j]
+    if (b.ending !== undefined) endings = Math.max(endings, b.ending)
+    if (b.close === '}') {
+      const m = b.text?.match(/(\d+)\s*x/i) ?? bars[from].text?.match(/(\d+)\s*x/i)
+      if (m) text = Number(m[1])
+      break
     }
   }
-  return 2
+  // then any further endings (N2 … N3 …) that follow it
+  if (endings > 0) {
+    for (j++; j < bars.length; j++) {
+      const b = bars[j]
+      if (b.open && b.ending === undefined) break
+      if (b.ending !== undefined) endings = Math.max(endings, b.ending)
+      if (b.close === ']' || b.close === 'Z') break
+    }
+  }
+  return Math.max(2, text, endings)
 }
 
 /** Bar indices for one pass through the form. */
@@ -68,6 +85,8 @@ export function formOrder(chart: Chart, final: boolean, startAt = 0): number[] {
   let pass = 1
   let times = 2
   let guard = 0
+  // where an unmatched "}" repeats back to: the start, or just after the last repeat
+  let afterRepeat = startAt
 
   const endingBlockEnd = (from: number) => {
     for (let j = from; j < n; j++) if (bars[j].close === '}') return j
@@ -89,7 +108,12 @@ export function formOrder(chart: Chart, final: boolean, startAt = 0): number[] {
     if (final && hasFine && isFine(b)) break
     if (isJump(b)) break
 
-    if (b.close === '}' && repStart >= 0 && pass < times) { pass++; i = repStart; continue }
+    if (b.close === '}') {
+      if (repStart < 0) { repStart = afterRepeat; pass = 1; times = repeatTimes(bars, repStart) } // unmatched "}"
+      if (pass < times) { pass++; i = repStart; continue }
+      // repeat finished: a later unmatched "}" goes back to here
+      repStart = -1; pass = 1; afterRepeat = i + 1
+    }
     i++
   }
   return order
