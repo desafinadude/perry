@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import type { CSSProperties, ClipboardEvent, DragEvent } from 'react'
 import type { Zone, ZoneIcon } from '../types'
-import { BUILTIN_ICONS } from '../icons/builtin'
+import { BUILTIN_ICONS, builtinIcon } from '../icons/builtin'
 import { importSvg, nameFromFile } from '../icons/svg'
 import { iconId, loadIconLibrary, saveIconLibrary } from '../icons/library'
 import { IconGlyph, resolveZoneIcon } from './ZoneIconView'
@@ -105,7 +105,11 @@ export function IconPicker({ zone, anchor, onChange, onClose }: Props) {
       <div style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '12px 16px 10px', borderBottom: '2px solid var(--ink)' }}>
         <span style={h3}>ICON</span>
         <span style={{ ...lbl, fontSize: 9, flex: 1, overflow: 'hidden', textOverflow: 'ellipsis' }}>
-          {current?.auto ? 'AUTO · FROM THE NAME' : current?.icon.credit ? current.icon.credit.toUpperCase() : current ? 'CHOSEN' : 'NONE'}
+          {(() => {
+            const credit = current && (current.icon.credit ?? builtinIcon(current.icon.id)?.credit)
+            const how = !current ? 'NONE' : current.auto ? 'AUTO · FROM THE NAME' : 'CHOSEN'
+            return credit ? `${how} · ${credit.toUpperCase()}` : how
+          })()}
         </span>
         <button aria-label="Close" onClick={onClose} style={{ width: 28, height: 28, border: 'none', background: 'transparent', cursor: 'pointer', padding: 0 }}>
           <svg width={12} height={12} viewBox="0 0 14 14" aria-hidden="true"><path d="M1 1 L13 13 M13 1 L1 13" stroke="var(--ink)" strokeWidth={1.8} /></svg>
@@ -117,7 +121,7 @@ export function IconPicker({ zone, anchor, onChange, onClose }: Props) {
           <span style={{ ...lbl, fontSize: 9 }}>PERRY</span>
           <div role="listbox" aria-label="Built-in icons" style={grid}>
             {BUILTIN_ICONS.map((b) => (
-              <button key={b.id} role="option" aria-selected={isCurrent(b.id)} title={b.name}
+              <button key={b.id} role="option" aria-selected={isCurrent(b.id)} title={b.credit ? `${b.name} — ${b.credit}` : b.name}
                 onClick={() => onChange({ id: b.id })} style={tile(isCurrent(b.id))}>
                 <IconGlyph icon={{ id: b.id }} size={26} />
               </button>

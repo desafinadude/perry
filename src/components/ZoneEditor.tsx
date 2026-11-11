@@ -11,6 +11,7 @@ import { Knob } from './Knob'
 import { Module, Segmented, h1, h2, hero, lbl, outlineBtn } from './controls'
 import { ZoneIconView, resolveZoneIcon, IconGlyph } from './ZoneIconView'
 import { IconPicker } from './IconPicker'
+import { builtinIcon } from '../icons/builtin'
 
 export type LearnField = 'minNote' | 'maxNote' | 'rootNote'
 export type LearningMode = { zoneId: string; field: LearnField } | null
@@ -185,12 +186,12 @@ function ZoneDetail({
               data-icon-trigger
               ref={iconBtnRef}
               aria-label="Choose an icon" aria-haspopup="dialog" aria-expanded={iconOpen}
-              title={zoneIcon ? `${zoneIcon.icon.name ?? 'Icon'}${zoneIcon.icon.credit ? ` — ${zoneIcon.icon.credit}` : ''} · click to change` : 'Add an icon'}
+              title={zoneIcon ? `${zoneIcon.icon.name ?? builtinIcon(zoneIcon.icon.id)?.name ?? 'Icon'}${(zoneIcon.icon.credit ?? builtinIcon(zoneIcon.icon.id)?.credit) ? ` — ${zoneIcon.icon.credit ?? builtinIcon(zoneIcon.icon.id)?.credit}` : ''} · click to change` : 'Add an icon'}
               onClick={() => setIconOpen((o) => !o)}
-              style={iconBtn(iconOpen)}
+              style={{ ...iconBtn(iconOpen), ...(zoneIcon ? {} : { border: "1.5px dashed var(--label)" }) }}
             >
               {zoneIcon
-                ? <IconGlyph icon={zoneIcon.icon} size={36} />
+                ? <IconGlyph icon={zoneIcon.icon} size={52} />
                 : <span style={{ fontFamily: 'var(--font-mono)', fontSize: 9, letterSpacing: '0.1em', lineHeight: 1.3 }}>+<br />ICON</span>}
             </button>
             <input
@@ -361,10 +362,8 @@ const nameInput: CSSProperties = {
 }
 const iconBtn = (open: boolean): CSSProperties => ({
   width: 56, height: 56, flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 0,
-  borderRadius: 0, cursor: 'pointer', textAlign: 'center',
-  border: `1.5px solid ${open ? 'var(--accent-1)' : 'var(--ink)'}`,
-  background: open ? 'var(--accent-1)' : 'transparent', color: open ? '#fff' : 'var(--ink)',
-  ['--icon-knock' as string]: open ? 'var(--accent-1)' : 'var(--bg)',
+  border: 'none', borderRadius: 0, background: 'transparent', cursor: 'pointer', textAlign: 'center',
+  color: open ? 'var(--accent-1)' : 'var(--ink)',
 })
 const removeBtn: CSSProperties = {
   width: 44, height: 44, background: 'transparent', border: '1.5px solid var(--border)',

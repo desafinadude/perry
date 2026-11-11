@@ -18,6 +18,7 @@ export function IconGlyph({ icon, size = 24, style, title }: { icon: ZoneIcon | 
   const box: CSSProperties = { width: size, height: size, flexShrink: 0, display: 'inline-flex', ...style }
   if (!icon) return <span aria-hidden="true" style={box} />
   const label = title ?? icon.name ?? builtinIcon(icon.id)?.name
+  const credit = icon.credit ?? builtinIcon(icon.id)?.credit
   if (icon.svg) {
     const svg = safeSvg(icon.svg)
     if (!svg) return <span aria-hidden="true" style={box} />
@@ -34,8 +35,9 @@ export function IconGlyph({ icon, size = 24, style, title }: { icon: ZoneIcon | 
   const b = builtinIcon(icon.id)
   if (!b) return <span aria-hidden="true" style={box} />
   return (
-    <svg role="img" aria-label={label} width={size} height={size} viewBox="0 0 24 24" style={box}
-      dangerouslySetInnerHTML={{ __html: (title ? `<title>${title.replace(/[<&]/g, '')}</title>` : '') + b.markup }} />
+    <svg role="img" aria-label={label} width={size} height={size} viewBox={b.viewBox ?? '0 0 24 24'} style={box}
+      dangerouslySetInnerHTML={{ __html: (title ? `<title>${title.replace(/[<&]/g, '')}</title>` : '') + b.markup }}
+      data-credit={credit} />
   )
 }
 
