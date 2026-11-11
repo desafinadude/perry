@@ -1,4 +1,5 @@
 import { useState, useCallback, useRef, forwardRef, useImperativeHandle, useEffect } from 'react'
+import { h1 } from './controls'
 import { useMetronome } from '../hooks/useMetronome'
 
 interface RecordedNote {
@@ -699,16 +700,11 @@ export const Recorder = forwardRef<RecorderHandle, Props>((props, ref) => {
         display: 'flex',
         alignItems: 'center',
         gap: 16,
-        padding: '16px 20px',
+        padding: '12px 20px',
         borderBottom: '2px solid var(--ink)',
         background: 'var(--bg)',
       }}>
-        <span style={{
-          fontFamily: 'var(--font-display)',
-          fontSize: 24,
-          letterSpacing: '0.1em',
-          color: 'var(--ink)',
-        }}>
+        <span style={{ ...h1, color: 'var(--ink)' }}>
           RECORDER
         </span>
 

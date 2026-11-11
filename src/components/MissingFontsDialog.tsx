@@ -1,6 +1,6 @@
 import { useEffect } from 'react'
 import type { CSSProperties } from 'react'
-import { lbl, outlineBtn } from './controls'
+import { h1, h2, lbl, outlineBtn } from './controls'
 
 export interface MissingFont {
   /** Font slot id the config's zones point at. */
@@ -35,7 +35,7 @@ export function MissingFontsDialog({ configName, missing, restoring, onLoad, onC
           <div style={{ width: 6, background: 'var(--accent-2)' }} />
           <div style={{ flex: 1, padding: '14px 20px 10px', display: 'flex', flexDirection: 'column', gap: 4 }}>
             <span style={lbl}>CONFIG · {configName.toUpperCase()}</span>
-            <div id="missing-fonts-title" style={{ fontFamily: 'var(--font-display)', fontSize: 40, lineHeight: 0.9 }}>
+            <div id="missing-fonts-title" style={h1}>
               {restoring ? 'LOADING SOUNDFONTS…' : `${missing.length} SOUNDFONT${missing.length === 1 ? '' : 'S'} NEEDED`}
             </div>
           </div>
@@ -50,7 +50,7 @@ export function MissingFontsDialog({ configName, missing, restoring, onLoad, onC
           {!restoring && missing.map((m) => (
             <div key={m.id} style={{ display: 'flex', alignItems: 'center', gap: 14, padding: '10px 0', borderTop: '1px solid var(--border)' }}>
               <div style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', gap: 3 }}>
-                <span style={{ fontFamily: 'var(--font-display)', fontSize: 24, lineHeight: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                <span style={{ ...h2, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                   {(m.name ?? 'UNKNOWN FONT').toUpperCase()}
                 </span>
                 <span style={{ ...lbl, fontSize: 9, whiteSpace: 'normal' }}>USED BY {m.zones.map((z) => z.toUpperCase()).join(' · ')}</span>

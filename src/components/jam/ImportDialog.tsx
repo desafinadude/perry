@@ -3,7 +3,7 @@ import type { CSSProperties } from 'react'
 import type { Chart } from '../../jam/model'
 import { importText } from '../../jam/ireal'
 import { styleForName } from '../../jam/styles'
-import { headText, lbl, outlineBtn } from '../controls'
+import { h1, h3, headText, lbl, outlineBtn } from '../controls'
 
 interface Props {
   existing: Chart[]
@@ -50,7 +50,7 @@ export function ImportDialog({ existing, onClose, onImport }: Props) {
         <div style={{ display: 'flex', alignItems: 'stretch', borderBottom: '2px solid var(--ink)' }}>
           <div style={{ width: 6, background: 'var(--accent-1)' }} />
           <div style={{ flex: 1, padding: '14px 20px 10px', display: 'flex', alignItems: 'flex-end', justifyContent: 'space-between', gap: 12 }}>
-            <div id="jam-import-title" style={{ fontFamily: 'var(--font-display)', fontSize: 44, lineHeight: 0.85 }}>IMPORT CHARTS</div>
+            <div id="jam-import-title" style={h1}>IMPORT CHARTS</div>
             <span style={lbl}>iREAL PRO · irealb:// · irealbook://</span>
           </div>
           <button aria-label="Close" onClick={onClose} style={{ width: 56, border: 'none', borderLeft: '1px solid var(--border)', background: 'transparent', cursor: 'pointer' }}>
@@ -105,7 +105,7 @@ export function ImportDialog({ existing, onClose, onImport }: Props) {
                       <input type="checkbox" checked={on} disabled={d} aria-label={`Import ${c.title}`}
                         onChange={() => setUnchecked((s) => { const n = new Set(s); if (n.has(c.id)) n.delete(c.id); else n.add(c.id); return n })}
                         style={{ width: 16, height: 16, accentColor: 'var(--accent-1)', margin: '0 0 0 6px' }} />
-                      <span style={{ fontFamily: 'var(--font-display)', fontSize: 22, lineHeight: 1, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{c.title.toUpperCase()}</span>
+                      <span style={{ ...h3, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{c.title.toUpperCase()}</span>
                       <span style={{ ...lbl, fontSize: 9, overflow: 'hidden', textOverflow: 'ellipsis' }}>{c.composer.toUpperCase()}</span>
                       <span style={{ ...lbl, fontSize: 9 }}>{c.style.toUpperCase()}</span>
                       <span style={{ fontSize: 12, fontWeight: 600 }}>{c.key.replace('b', '♭').replace('-', '–')}</span>
