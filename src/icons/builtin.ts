@@ -24,6 +24,10 @@ export interface BuiltinIcon {
   markup: string
   /** Name words that suggest this icon. */
   words: string[]
+  /** Defaults to the 24×24 grid. */
+  viewBox?: string
+  /** Attribution for icons drawn by others. */
+  credit?: string
 }
 
 const S = 'fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"'
@@ -31,8 +35,11 @@ const F = 'fill="currentColor"'
 
 export const BUILTIN_ICONS: BuiltinIcon[] = [
   {
-    id: 'keys', name: 'Keys', words: ['piano', 'keys', 'key', 'grand', 'rhodes', 'wurli', 'wurlitzer', 'epiano', 'clav', 'harpsichord'],
-    markup: `<rect x="3" y="6" width="18" height="12" ${S}/><path d="M7.5 12V18M12 12V18M16.5 12V18" ${S}/><path d="M6.5 6h2v6h-2zM11 6h2v6h-2zM15.5 6h2v6h-2z" ${F}/>`,
+    // "Piano" by BnB Studio from the Noun Project (CC BY 3.0), redrawn as vector
+    id: 'keys', name: 'Piano', credit: 'BnB Studio · Noun Project', viewBox: '16 16 480 480',
+    words: ['piano', 'keys', 'key', 'grand', 'rhodes', 'wurli', 'wurlitzer', 'epiano', 'clav', 'harpsichord'],
+    markup: `<path fill="currentColor" fill-rule="evenodd" d="M64 83H448A19 19 0 0 1 467 102V410A19 19 0 0 1 448 429H64A19 19 0 0 1 45 410V102A19 19 0 0 1 64 83ZM65 96A7 7 0 0 0 58 103V409A7 7 0 0 0 65 416H447A7 7 0 0 0 454 409V103A7 7 0 0 0 447 96Z"/>`
+      + [109, 224, 339].map((x) => `<path fill="currentColor" d="M${x} 90H${x + 64}V292A11 11 0 0 1 ${x + 53} 303H${x + 11}A11 11 0 0 1 ${x} 292Z"/><rect fill="currentColor" x="${x + 25}" y="300" width="12" height="120"/>`).join(''),
   },
   {
     id: 'organ', name: 'Organ', words: ['organ', 'hammond', 'b3', 'church'],

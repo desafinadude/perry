@@ -75,3 +75,7 @@ proves signal end-to-end).
 - **SpessaSynth** — SoundFont synthesis in the browser
 - **Tone.js** — sheet music playback timing
 - **OpenSheetMusicDisplay** — MusicXML rendering
+
+## Credits
+
+- Piano icon by BnB Studio from the [Noun Project](https://thenounproject.com/icon/piano-8409459/) (CC BY 3.0), redrawn as a vector.
