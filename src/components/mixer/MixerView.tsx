@@ -7,6 +7,8 @@ import { Knob } from '../Knob'
 import { h1, h2, headText, lbl } from '../controls'
 import { fmtHz, fmtPan } from '../format'
 import { Fader } from './Fader'
+import { IconGlyph, resolveZoneIcon } from '../ZoneIconView'
+import type { ZoneIcon } from '../../types'
 
 type Meters = {
   strips: Record<string, number>
@@ -36,6 +38,7 @@ const HEAD_H = 58
 const CONTROLS_H = 246
 const FADER_H = 236
 
+const JAM_ICONS: Record<JamStrip, string> = { drums: 'drums', bass: 'bass', keys: 'keys', click: 'click' }
 const JAM_LABELS: Record<JamStrip, [string, string]> = {
   drums: ['DRUMS', 'BUILT-IN KIT'], bass: ['BASS', 'BUILT-IN BASS'], keys: ['KEYS', 'BUILT-IN KEYS'], click: ['CLICK', 'JAM METRONOME'],
 }
@@ -95,6 +98,7 @@ export function MixerView({ zones, mixer, onMixer, onZoneMix, chainKeyFor, readM
               <Strip
                 key={s.key}
                 name={s.zones.map((x) => x.name).join(' + ').toUpperCase()}
+                icon={resolveZoneIcon(z)?.icon ?? null}
                 source={source}
                 color={z.color}
                 mix={s.mix}
@@ -111,6 +115,7 @@ export function MixerView({ zones, mixer, onMixer, onZoneMix, chainKeyFor, readM
             <Strip
               key={k}
               name={JAM_LABELS[k][0]}
+              icon={{ id: JAM_ICONS[k] }}
               source={JAM_LABELS[k][1]}
               color={k === 'click' ? '#8E8B82' : 'var(--ink)'}
               mix={mixer.jam[k]}
@@ -197,20 +202,23 @@ function Group({ name, children, tone }: { name: string; children: ReactNode; to
   )
 }
 
-function StripHead({ name, sub, color, dim }: { name: string; sub: string; color: string; dim?: boolean }) {
+function StripHead({ name, sub, color, dim, icon }: { name: string; sub: string; color: string; dim?: boolean; icon?: ZoneIcon | null }) {
   return (
     <>
       <div style={{ height: 5, flexShrink: 0, background: color }} />
       <div style={{ height: HEAD_H, boxSizing: 'border-box', padding: '8px 9px 6px', display: 'flex', flexDirection: 'column', gap: 3, borderBottom: '1px solid var(--border)' }}>
-        <span title={name} style={{ ...h2, color: dim ? 'var(--label)' : 'var(--ink)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{name}</span>
+        <span style={{ display: 'flex', alignItems: 'center', gap: 6, minWidth: 0, color: dim ? 'var(--label)' : 'var(--ink)' }}>
+          {icon && <IconGlyph icon={icon} size={20} />}
+          <span title={name} style={{ ...h2, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{name}</span>
+        </span>
         <span style={{ ...lbl, fontSize: 9, letterSpacing: '0.1em', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{sub}</span>
       </div>
     </>
   )
 }
 
-function Strip({ name, source, color, mix, silenced, meter, onChange }: {
-  name: string; source: string; color: string; mix: ChannelMix; silenced: boolean; meter: number; onChange: (m: ChannelMix) => void
+function Strip({ name, icon, source, color, mix, silenced, meter, onChange }: {
+  name: string; icon: ZoneIcon | null; source: string; color: string; mix: ChannelMix; silenced: boolean; meter: number; onChange: (m: ChannelMix) => void
 }) {
   const set = <K extends keyof ChannelMix>(k: K, v: ChannelMix[K]) => onChange({ ...mix, [k]: v })
   const d = defaultMix()
@@ -218,7 +226,7 @@ function Strip({ name, source, color, mix, silenced, meter, onChange }: {
   const pct = (v: number) => `${Math.round(v * 100)}%`
   return (
     <div style={{ width: 132, display: 'flex', flexDirection: 'column', borderRight: '1px solid var(--border)', background: silenced ? 'var(--bypass)' : 'transparent' }}>
-      <StripHead name={name} sub={source} color={color} dim={silenced} />
+      <StripHead name={name} icon={icon} sub={source} color={color} dim={silenced} />
 
       <div style={{ height: CONTROLS_H, boxSizing: 'border-box', display: 'flex', flexDirection: 'column', borderBottom: '1px solid var(--border)' }}>
         <div style={{ padding: '6px 2px 4px', borderBottom: '1px solid var(--border)' }}>
